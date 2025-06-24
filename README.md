@@ -1,7 +1,7 @@
-[![Build Status](https://travis-ci.org/cogolabs/beyond.svg?branch=master)](https://travis-ci.org/cogolabs/beyond)
-[![codecov](https://codecov.io/gh/cogolabs/beyond/branch/master/graph/badge.svg)](https://codecov.io/gh/cogolabs/beyond)
-[![Docker](https://github.com/cogolabs/beyond/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/cogolabs/beyond/actions/workflows/docker-publish.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/cogolabs/beyond)](https://goreportcard.com/report/github.com/cogolabs/beyond)
+[![Build Status](https://travis-ci.org/presbrey/beyond.svg?branch=master)](https://travis-ci.org/presbrey/beyond)
+[![codecov](https://codecov.io/gh/presbrey/beyond/branch/master/graph/badge.svg)](https://codecov.io/gh/presbrey/beyond)
+[![Docker](https://github.com/presbrey/beyond/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/presbrey/beyond/actions/workflows/docker-publish.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/presbrey/beyond)](https://goreportcard.com/report/github.com/presbrey/beyond)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 # beyond
@@ -21,15 +21,15 @@ Control access to services beyond your perimeter network. Deploy with split-DNS 
 
 ## Install
 ```
-$ docker pull cogolabs/beyond
+$ docker pull presbrey/beyond
 ```
 or:
 ```
-$ go get -u -x github.com/cogolabs/beyond
+$ go get -u -x github.com/presbrey/beyond
 ```
 ## Usage
 ```
-$ docker run --rm -p 80:80 cogolabs/beyond httpd --help
+$ docker run --rm -p 80:80 presbrey/beyond httpd --help
   -401-code int
     	status to respond when a user needs authentication (default 418)
   -404-message string

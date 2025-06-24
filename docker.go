@@ -172,7 +172,7 @@ func (ds *dockerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // 	"access": [
 // 	  {
 // 		"type": "repository",
-// 		"name": "cogolabs/beyond",
+// 		"name": "presbrey/beyond",
 // 		"actions": [
 // 		  "pull"
 // 		]
