@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cogolabs/beyond"
+	"github.com/presbrey/beyond"
 )
 
 var (

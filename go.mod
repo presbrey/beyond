@@ -1,4 +1,4 @@
-module github.com/cogolabs/beyond
+module github.com/presbrey/beyond
 
 go 1.18
 
