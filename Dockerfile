@@ -1,4 +1,4 @@
-FROM golang:1.18.1
+FROM golang:1.24
 
 ADD . /go/src/github.com/presbrey/beyond
 WORKDIR /go/src/github.com/presbrey/beyond
