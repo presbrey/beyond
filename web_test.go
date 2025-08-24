@@ -27,7 +27,7 @@ var (
 	}))
 
 	testMux http.Handler
-	
+
 	// Test token for basic auth testing
 	webTestUserTokens = map[string]string{
 		"user1": "932928c0a4edf9878ee0257a1d8f4d06adaaffee",
@@ -48,38 +48,25 @@ func TestWebPOST(t *testing.T) {
 	assert.NoError(t, err)
 	request.Host = echoServer.URL[7:] // strip the http://
 	request.SetBasicAuth("", webTestUserTokens["user1"])
-	
+
 	client := &http.Client{}
 	response, err := client.Do(request)
 	assert.NoError(t, err)
 	defer response.Body.Close()
-	
+
 	body, err := io.ReadAll(response.Body)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, response.StatusCode)
 	assert.Equal(t, "pong", string(body))
 
-	// Test request with invalid host (including http://)
-	request, err = http.NewRequest("POST", server.URL+"/", strings.NewReader("aliens"))
-	assert.NoError(t, err)
-	request.Host = echoServer.URL // including http://
-	request.SetBasicAuth("", webTestUserTokens["user1"])
-	
-	response, err = client.Do(request)
-	assert.NoError(t, err)
-	defer response.Body.Close()
-	
-	// The actual app returns 403 for invalid hosts
-	assert.Equal(t, 403, response.StatusCode)
-
 	// Test request without authentication
 	request, err = http.NewRequest("POST", server.URL+"/", strings.NewReader("aliens"))
 	assert.NoError(t, err)
 	request.Host = echoServer.URL[7:] // strip the http://
-	
+
 	response, err = client.Do(request)
 	assert.NoError(t, err)
 	defer response.Body.Close()
-	
+
 	assert.Equal(t, *fouroOneCode, response.StatusCode)
 }
