@@ -107,7 +107,7 @@ $ docker run --rm -p 80:80 presbrey/beyond httpd --help
   -oidc-client-secret string
     	OIDC client secret (default "cxLF74XOeRRFDJbKuJpZAOtL4pVPK1t2XGVrDbe5R")
   -oidc-issuer string
-    	OIDC issuer URL provided by IdP (default "https://yourcompany.onelogin.com/oidc")
+    	OIDC issuer URL provided by IdP (default "https://accounts.google.com")
   -saml-cert-file string
     	SAML SP path to cert.pem (default "example/myservice.cert")
   -saml-entity-id string

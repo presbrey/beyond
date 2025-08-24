@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	oidcIssuer       = flag.String("oidc-issuer", "https://yourcompany.onelogin.com/oidc", "OIDC issuer URL provided by IdP")
+	oidcIssuer       = flag.String("oidc-issuer", "https://accounts.google.com", "OIDC issuer URL provided by IdP")
 	oidcClientID     = flag.String("oidc-client-id", "f8b8b020-4ec2-0135-6452-027de1ec0c4e43491", "OIDC client ID")
 	oidcClientSecret = flag.String("oidc-client-secret", "cxLF74XOeRRFDJbKuJpZAOtL4pVPK1t2XGVrDbe5R", "OIDC client secret")
 

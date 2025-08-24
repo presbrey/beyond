@@ -3,7 +3,7 @@ package beyond
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +20,7 @@ var (
 	logElasticTestServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/_bulk":
-			rBody, _ := ioutil.ReadAll(r.Body)
+			rBody, _ := io.ReadAll(r.Body)
 			switch {
 			case strings.Contains(string(rBody), "ERROR") && logElasticTestErrorN < 5:
 				logElasticTestErrorN++

@@ -2,7 +2,7 @@ package beyond
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -105,7 +105,7 @@ func TestFederateVerify500(t *testing.T) {
 	testMux.ServeHTTP(w, req)
 
 	resp := w.Result()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 
 	assert.Equal(t, 500, resp.StatusCode)
 	assert.Equal(t, "securecookie: no codecs provided\n", string(body))

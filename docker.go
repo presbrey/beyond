@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"flag"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -86,7 +86,7 @@ func (ds *dockerServer) ModifyResponse(resp *http.Response) error {
 						if err == nil {
 							// < {"token": "beyondXYZ"}
 
-							resp.Body = ioutil.NopCloser(&buf)
+							resp.Body = io.NopCloser(&buf)
 							resp.ContentLength = int64(buf.Len())
 							resp.Header.Set("Content-Length", strconv.Itoa(buf.Len()))
 							return nil
@@ -156,43 +156,43 @@ func (ds *dockerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // https://docs.docker.com/registry/spec/auth/jwt/
 //
-// {
-// 	"context": {
-// 	  "com.apostille.root": "$disabled"
-// 	},
-// 	"aud": "docker.colofoo.net",
-// 	"exp": 1593910505,
-// 	"iss": "quay",
-// 	"iat": 1593906905,
-// 	"nbf": 1593906905,
-// 	"sub": "(anonymous)"
-// }
+//	{
+//		"context": {
+//		  "com.apostille.root": "$disabled"
+//		},
+//		"aud": "docker.colofoo.net",
+//		"exp": 1593910505,
+//		"iss": "quay",
+//		"iat": 1593906905,
+//		"nbf": 1593906905,
+//		"sub": "(anonymous)"
+//	}
 //
-// {
-// 	"access": [
-// 	  {
-// 		"type": "repository",
-// 		"name": "presbrey/beyond",
-// 		"actions": [
-// 		  "pull"
-// 		]
-// 	  }
-// 	],
-// 	"context": {
-// 	  "entity_kind": "appspecifictoken",
-// 	  "kind": "user",
-// 	  "version": 2,
-// 	  "com.apostille.root": "$disabled",
-// 	  "user": "joe",
-// 	  "entity_reference": "4ac6f0e7-7bd2-4aea-9a77-738e1b98f22f"
-// 	},
-// 	"aud": null,
-// 	"exp": 1593911101,
-// 	"iss": "quay",
-// 	"iat": 1593907501,
-// 	"nbf": 1593907501,
-// 	"sub": "joe"
-// }
+//	{
+//		"access": [
+//		  {
+//			"type": "repository",
+//			"name": "presbrey/beyond",
+//			"actions": [
+//			  "pull"
+//			]
+//		  }
+//		],
+//		"context": {
+//		  "entity_kind": "appspecifictoken",
+//		  "kind": "user",
+//		  "version": 2,
+//		  "com.apostille.root": "$disabled",
+//		  "user": "joe",
+//		  "entity_reference": "4ac6f0e7-7bd2-4aea-9a77-738e1b98f22f"
+//		},
+//		"aud": null,
+//		"exp": 1593911101,
+//		"iss": "quay",
+//		"iat": 1593907501,
+//		"nbf": 1593907501,
+//		"sub": "joe"
+//	}
 type dockerClaimSet struct {
 	Access []struct {
 		Type    string   `json:"type"`

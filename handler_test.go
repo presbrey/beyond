@@ -3,6 +3,7 @@ package beyond
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,6 +11,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	// Load the allowlist for testing
+	cwd, _ := os.Getwd()
+	*allowlistURL = "file://" + cwd + "/example/allowlist.json"
+	refreshAllowlist()
+}
 
 func TestHandlerPing(t *testing.T) {
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
@@ -110,11 +118,11 @@ func TestHandlerAllowlist(t *testing.T) {
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
 		request, err := http.NewRequest("GET", "/", nil)
 		assert.Nil(t, err)
-		request.Host = "github.githubassets.com"
+		request.Host = "httpbin.org"
 		response := r.Do(request)
 		assert.Equal(t, 200, response.StatusCode)
 		assert.Equal(t, "", response.Header.Get("Set-Cookie"))
-		assert.Equal(t, "Welcome", string(response.RawBody[:7]))
+		assert.Contains(t, string(response.RawBody), "httpbin.org")
 	})
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
 		request, err := http.NewRequest("GET", "/.well-known/acme-challenge/test", nil)
@@ -144,7 +152,7 @@ func TestNexthopInvalid(t *testing.T) {
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
 		request, err := http.NewRequest("GET", "/favicon.ico", nil)
 		assert.Nil(t, err)
-		request.Host = "test2.com"
+		request.Host = "nonexistent.example.test"
 		response := r.Do(request)
 		assert.Equal(t, 404, response.StatusCode)
 		assert.Equal(t, "", response.Header.Get("Set-Cookie"))

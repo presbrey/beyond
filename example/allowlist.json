@@ -1,8 +1,8 @@
 {
  "host": {
-  "github.githubassets.com": true,
+  "httpbin.org": true,
   "echo.websocket.org": true,
-  "test2.com": true
+  "nonexistent.example.test": true
  },
  "path": {
   "/.well-known/acme-challenge": true

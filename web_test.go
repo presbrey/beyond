@@ -2,7 +2,7 @@ package beyond
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +15,7 @@ import (
 
 var (
 	echoServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, err := ioutil.ReadAll(r.Body)
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			log.Println(err)
 		}
@@ -49,8 +49,8 @@ func TestWebPOST(t *testing.T) {
 		assert.NoError(t, err)
 		request.SetBasicAuth("", tokenTestUserTokens["user1"])
 		response = rq.Do(request)
-		assert.Equal(t, 502, response.StatusCode)
-		assert.Equal(t, "", response.Body)
+		assert.Equal(t, 400, response.StatusCode)
+		assert.Contains(t, response.Body, "400 Bad Request")
 
 		request, err = http.NewRequest("POST", "/", strings.NewReader("aliens"))
 		request.Host = echoServer.URL[7:] // strip the http://

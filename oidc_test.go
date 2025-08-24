@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -78,7 +78,7 @@ func (o *oidcMock) Verify(ctx context.Context, raw string) (*oidc.IDToken, error
 		return nil
 	}
 	if raw == "claimsErr" {
-		getOIDCClaims = func(claims *oidcClaims, tokenID *oidc.IDToken) error {
+		getOIDCClaims = func(_ *oidcClaims, _ *oidc.IDToken) error {
 			return fmt.Errorf("test error")
 		}
 	}
@@ -125,7 +125,7 @@ func TestOIDCSuccess(t *testing.T) {
 		resp, err := http.DefaultClient.Do(request)
 		assert.NoError(t, err)
 		assert.Equal(t, 200, resp.StatusCode)
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		assert.NoError(t, err)
 		assert.Equal(t, "NEXT", string(respBody))
 	})

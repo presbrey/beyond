@@ -5,12 +5,30 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/drewolson/testflight"
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	// Setup file transport for ACL
+	t := &http.Transport{}
+	t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
+	httpACL.Transport = t
+	
+	// Load the fence and sites configuration for testing
+	cwd, _ := os.Getwd()
+	*fenceURL = "file://" + cwd + "/example/fence.json"
+	*sitesURL = "file://" + cwd + "/example/sites.json"
+	refreshFence()
+	refreshSites()
+	
+	// Setup token authentication
+	*tokenBase = tokenServer.URL + "/?access_token="
+}
 
 var (
 	tokenTestTokenUsers = map[string]string{
@@ -108,10 +126,10 @@ func TestTokenSuccess(t *testing.T) {
 
 	// expect ACL 403
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/ip", nil)
+		request, err := http.NewRequest("GET", "/", nil)
 		assert.Nil(t, err)
 		request.Header.Set("Authorization", "Token "+tokenTestUserTokens["vendor@gmail.com"])
-		request.Host = "httpbin.org"
+		request.Host = "example.com"
 		response := r.Do(request)
 		assert.Equal(t, 403, response.StatusCode)
 		assert.Contains(t, response.Body, "Access Denied")

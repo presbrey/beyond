@@ -61,9 +61,6 @@ func samlSetup() error {
 	}
 
 	rootURL, _ := url.Parse("https://" + *host)
-	if err != nil {
-		return err
-	}
 	samlSP, err = samlsp.New(samlsp.Options{
 		EntityID:    *samlID,
 		SignRequest: *samlSignRequests,
