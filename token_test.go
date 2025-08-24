@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/drewolson/testflight"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -105,33 +104,39 @@ func TestTokenFederation(t *testing.T) {
 }
 
 func TestTokenSuccess(t *testing.T) {
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/ip", nil)
-		assert.Nil(t, err)
-		request.Header.Set("Authorization", "Token "+tokenTestUserTokens["user1"])
-		request.Host = "httpbin.org"
-		response := r.Do(request)
-		assert.Equal(t, 200, response.StatusCode)
-		assert.Equal(t, "{\n  \"origin\"", strings.Split(response.Body, ":")[0])
-	})
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/ip", nil)
-		assert.Nil(t, err)
-		request.SetBasicAuth("user1", tokenTestUserTokens["user1"])
-		request.Host = "httpbin.org"
-		response := r.Do(request)
-		assert.Equal(t, 200, response.StatusCode)
-		assert.Equal(t, "{\n  \"origin\"", strings.Split(response.Body, ":")[0])
-	})
+	// Test token authentication with Authorization header
+	request := httptest.NewRequest("GET", "/ip", nil)
+	request.Header.Set("Authorization", "Token "+tokenTestUserTokens["user1"])
+	request.Host = "httpbin.org"
+	w := httptest.NewRecorder()
+	testMux.ServeHTTP(w, request)
+	
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "{\n  \"origin\"", strings.Split(string(body), ":")[0])
 
-	// expect ACL 403
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/", nil)
-		assert.Nil(t, err)
-		request.Header.Set("Authorization", "Token "+tokenTestUserTokens["vendor@gmail.com"])
-		request.Host = "example.com"
-		response := r.Do(request)
-		assert.Equal(t, 403, response.StatusCode)
-		assert.Contains(t, response.Body, "Access Denied")
-	})
+	// Test token authentication with Basic Auth
+	request = httptest.NewRequest("GET", "/ip", nil)
+	request.SetBasicAuth("user1", tokenTestUserTokens["user1"])
+	request.Host = "httpbin.org"
+	w = httptest.NewRecorder()
+	testMux.ServeHTTP(w, request)
+	
+	resp = w.Result()
+	body, _ = io.ReadAll(resp.Body)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "{\n  \"origin\"", strings.Split(string(body), ":")[0])
+
+	// Test ACL 403 - vendor@gmail.com should be blocked by ACL
+	request = httptest.NewRequest("GET", "/", nil)
+	request.Header.Set("Authorization", "Token "+tokenTestUserTokens["vendor@gmail.com"])
+	request.Host = "example.com"
+	w = httptest.NewRecorder()
+	testMux.ServeHTTP(w, request)
+	
+	resp = w.Result()
+	body, _ = io.ReadAll(resp.Body)
+	assert.Equal(t, 403, resp.StatusCode)
+	assert.Contains(t, string(body), "Access Denied")
 }

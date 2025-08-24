@@ -2,10 +2,11 @@ package beyond
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/drewolson/testflight"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,28 +29,30 @@ func TestErrorQuery(t *testing.T) {
 		"unsupported_response_type": {501, "501 - Not Implemented"},
 		"temporarily_unavailable":   {503, "503 - Service Unavailable"},
 	} {
-		testflight.WithServer(testMux, func(r *testflight.Requester) {
-			request, err := http.NewRequest("GET", "/oidc?error="+errorQuery, nil)
-			assert.Nil(t, err)
-			request.Host = *host
-			response := r.Do(request)
-			assert.Equal(t, expectedValues.code, response.StatusCode)
-			assert.Contains(t, response.Body, expectedValues.text)
-		})
+		request := httptest.NewRequest("GET", "/oidc?error="+errorQuery, nil)
+		request.Host = *host
+		w := httptest.NewRecorder()
+		testMux.ServeHTTP(w, request)
+		
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+		assert.Equal(t, expectedValues.code, resp.StatusCode)
+		assert.Contains(t, string(body), expectedValues.text)
 	}
 }
 
 func TestErrorPlain(t *testing.T) {
 	*errorPlain = true
 
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/oidc?error=server_error&error_description=Foo+Biz", nil)
-		assert.Nil(t, err)
-		request.Host = *host
-		response := r.Do(request)
-		assert.Equal(t, 500, response.StatusCode)
-		assert.Contains(t, response.Body, "Foo Biz")
-	})
+	request := httptest.NewRequest("GET", "/oidc?error=server_error&error_description=Foo+Biz", nil)
+	request.Host = *host
+	w := httptest.NewRecorder()
+	testMux.ServeHTTP(w, request)
+	
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, 500, resp.StatusCode)
+	assert.Contains(t, string(body), "Foo Biz")
 
 	*errorPlain = false
 }

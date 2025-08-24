@@ -12,7 +12,6 @@ import (
 	"time"
 
 	oidc "github.com/coreos/go-oidc"
-	"github.com/drewolson/testflight"
 	"github.com/gorilla/securecookie"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"
@@ -102,33 +101,37 @@ func TestOIDCSuccess(t *testing.T) {
 	oidcConfig = mock
 	oidcVerifier = mock
 
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/oidc?state=barbaz&next=localhost/next", nil)
-		assert.NoError(t, err)
+	// Test OIDC callback with state and next parameters
+	request := httptest.NewRequest("GET", "/oidc?state=barbaz&next=localhost/next", nil)
+	
+	vals := map[string]interface{}{"state": "barbaz", "next": oidcServer.URL + "/next"}
+	cookieValue, err := securecookie.EncodeMulti(*cookieName, &vals, store.Codecs...)
+	assert.NoError(t, err)
+	request.AddCookie(&http.Cookie{Name: *cookieName, Value: cookieValue})
 
-		vals := map[string]interface{}{"state": "barbaz", "next": oidcServer.URL + "/next"}
-		cookieValue, err := securecookie.EncodeMulti(*cookieName, &vals, store.Codecs...)
-		assert.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: *cookieName, Value: cookieValue})
+	request.Host = *host
+	w := httptest.NewRecorder()
+	testMux.ServeHTTP(w, request)
+	
+	resp := w.Result()
+	body, _ := io.ReadAll(resp.Body)
+	// The OIDC handler redirects to the next URL, so we expect a 302
+	assert.Equal(t, 302, resp.StatusCode)
+	assert.Contains(t, string(body), "Found")
 
-		request.Host = *host
-		response := r.Do(request)
-		assert.Equal(t, 200, response.StatusCode)
-		assert.Equal(t, "NEXT", response.Body)
-
-		b := strings.NewReader("POSTED")
-		request, err = http.NewRequest("POST", oidcServer.URL+"/next", b)
-		assert.NoError(t, err)
-		request.AddCookie(&http.Cookie{Name: *cookieName, Value: cookieValue})
-
-		request.Host = *host
-		resp, err := http.DefaultClient.Do(request)
-		assert.NoError(t, err)
-		assert.Equal(t, 200, resp.StatusCode)
-		respBody, err := io.ReadAll(resp.Body)
-		assert.NoError(t, err)
-		assert.Equal(t, "NEXT", string(respBody))
-	})
+	// Test POST request to OIDC server directly
+	b := strings.NewReader("POSTED")
+	request, err = http.NewRequest("POST", oidcServer.URL+"/next", b)
+	assert.NoError(t, err)
+	request.AddCookie(&http.Cookie{Name: *cookieName, Value: cookieValue})
+	request.Host = *host
+	
+	resp, err = http.DefaultClient.Do(request)
+	assert.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	respBody, err := io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, "NEXT", string(respBody))
 }
 
 func TestOIDCVerifyToken(t *testing.T) {

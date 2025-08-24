@@ -14,22 +14,51 @@ var (
 )
 
 func http2ws(r *http.Request) (*url.URL, error) {
-	target := "wss://" + hostRewrite(r.Host) + r.URL.RequestURI()
+	rewrite := hostRewriteDetailed(r.Host)
+	
+	var target string
+	if rewrite.FullURL != "" {
+		// Convert http/https to ws/wss for WebSocket
+		if rewrite.Scheme == "https" {
+			target = "wss://" + rewrite.Host
+			if rewrite.Port != "" {
+				target += ":" + rewrite.Port
+			}
+		} else {
+			target = "ws://" + rewrite.Host
+			if rewrite.Port != "" {
+				target += ":" + rewrite.Port
+			}
+		}
+		target += r.URL.RequestURI()
+	} else {
+		// Default to secure WebSocket
+		target = "wss://" + rewrite.Host + r.URL.RequestURI()
+	}
 	return url.Parse(target)
 }
 
 func nexthop(w http.ResponseWriter, r *http.Request) {
 	var (
-		nextHost  = hostRewrite(r.Host)
+		rewrite   = hostRewriteDetailed(r.Host)
+		nextHost  = rewrite.Host
 		nextProxy http.Handler
 	)
+
+	// Use full URL if available for backend connection
+	var targetBase string
+	if rewrite.FullURL != "" {
+		targetBase = rewrite.FullURL
+	} else {
+		targetBase = nextHost
+	}
 
 	v, ok := hostProxy.Load(nextHost)
 	if ok {
 		nextProxy, ok = v.(*httputil.ReverseProxy)
 	}
 	if !ok && *learnNexthops {
-		nextProxy = learn(nextHost)
+		nextProxy = learn(targetBase)
 		if nextProxy != nil {
 			hostProxy.Store(nextHost, nextProxy)
 			ok = true

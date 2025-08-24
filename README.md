@@ -126,19 +126,21 @@ Beyond supports rewriting backend hostnames to different values and restricting 
 You can configure host rewriting in two ways:
 
 **Option 1: Command Line**
+Replacement values can include protocols and ports for advanced routing:
 ```bash
 docker run --rm -p 80:80 presbrey/beyond httpd \
-  -hosts-csv "old-api.example.com=new-api.example.com,legacy.corp=modern.corp.example.com" \
+  -hosts-csv "old-api.example.com=https://new-api.example.com:8443,legacy.corp=http://modern.corp.example.com:8080" \
   # ... other parameters
 ```
 
 **Option 2: JSON Configuration File**
-Create a JSON file with hostname mappings:
+Create a JSON file with hostname mappings. Replacement values can include protocols and ports:
 ```json
 {
   "old-api.example.com": "new-api.example.com",
-  "legacy.mycompany.net": "modern.mycompany.net",
-  "internal.corp": "internal.corp.example.com"
+  "legacy.mycompany.net": "https://modern.mycompany.net:8443",
+  "internal.corp": "http://internal.corp.example.com:8080",
+  "secure.app": "https://secure.app.example.com"
 }
 ```
 
@@ -148,6 +150,17 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
   -hosts-url https://config.example.com/hosts.json \
   # ... other parameters
 ```
+
+#### Protocol and Port Support
+
+When replacement values include full URLs (with `http://` or `https://`), Beyond extracts the protocol and port information for backend connections:
+
+- **Simple hostname replacement**: `"old.example.com": "new.example.com"` - preserves original protocol and port
+- **Protocol specification**: `"legacy.api": "https://modern.api"` - forces HTTPS connection to backend
+- **Port specification**: `"internal.app": "http://internal.app:8080"` - connects to specific port
+- **Full URL**: `"old.secure": "https://new.secure:9443"` - specifies both protocol and port
+
+Subdomain matching is preserved: if `api.legacy.com` maps to `https://api.modern.com:8443`, then `service.api.legacy.com` becomes `service.api.modern.com` with HTTPS on port 8443.
 
 #### Host Allowlist (hosts-only mode)
 Use the `-hosts-only` flag to restrict access to only hosts defined in your host mappings:
