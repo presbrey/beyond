@@ -1,0 +1,5 @@
+{
+  "old-api.example.com": "new-api.example.com",
+  "legacy.mycompany.net": "modern.mycompany.net",
+  "internal.corp": "internal.corp.example.com"
+}

@@ -89,6 +89,7 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
   -allowlist-url https://config.example.com/allowlist.json \
   -fence-url https://config.example.com/fence.json \
   -sites-url https://config.example.com/sites.json \
+  -hosts-url https://config.example.com/hosts.json \
   -log-elastic https://elasticsearch.example.com:9200 \
   -log-json \
   -error-email support@example.com
@@ -116,6 +117,54 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
   -cookie-key "$COOKIE_KEY" \
   # ... other parameters
 ```
+
+### Host Management
+
+Beyond supports rewriting backend hostnames to different values and restricting access to only specific hosts. This is useful for legacy system migrations, internal name mapping, and creating secure host allowlists.
+
+#### Host Rewriting
+You can configure host rewriting in two ways:
+
+**Option 1: Command Line**
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -hosts-csv "old-api.example.com=new-api.example.com,legacy.corp=modern.corp.example.com" \
+  # ... other parameters
+```
+
+**Option 2: JSON Configuration File**
+Create a JSON file with hostname mappings:
+```json
+{
+  "old-api.example.com": "new-api.example.com",
+  "legacy.mycompany.net": "modern.mycompany.net",
+  "internal.corp": "internal.corp.example.com"
+}
+```
+
+Then reference it:
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -hosts-url https://config.example.com/hosts.json \
+  # ... other parameters
+```
+
+#### Host Allowlist (hosts-only mode)
+Use the `-hosts-only` flag to restrict access to only hosts defined in your host mappings:
+
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -hosts-url https://config.example.com/hosts.json \
+  -hosts-only \
+  # ... other parameters
+```
+
+When `hosts-only` is enabled:
+- Only hosts in the mapping (from `-hosts-csv` or `-hosts-url`) are allowed
+- Requests to unmapped hosts return 403 "Host not allowed"
+- Subdomain matching works (e.g., `api.example.com` matches `example.com`)
+
+Both command-line and URL mappings can be used together - they are merged at startup.
 
 ### Command Line Options
 ```

@@ -110,7 +110,10 @@ func Setup() error {
 		err = federateSetup()
 	}
 	if err == nil {
-		err = hostMasqSetup(*hostMasq)
+		err = hostsSetup(*hostsCSV)
+	}
+	if err == nil {
+		err = refreshHosts()
 	}
 	if err == nil {
 		err = logSetup()

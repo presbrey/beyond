@@ -87,6 +87,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// check host-only restriction
+	if !hostAllowed(r.Host) {
+		errorHandler(w, 403, "Host not allowed")
+		return
+	}
+
 	// force login
 	if user == "" {
 		login(w, r)
