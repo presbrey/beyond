@@ -2,14 +2,12 @@ package beyond
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/olivere/elastic"
 	log "github.com/sirupsen/logrus"
 )
@@ -82,10 +80,7 @@ func logRoundtrip(resp *http.Response) {
 		WithFields(d).Info("HTTP")
 	}
 	if *logElastic != "" {
-		raw, _ := json.Marshal(d)
-		hash := sha1.New()
-		hash.Write(raw)
-		id := fmt.Sprintf("%x:%x", time.Now().Unix(), hash.Sum(nil))
+		id := uuid.Must(uuid.NewV7()).String()
 		elt := elastic.NewBulkUpdateRequest().Index(*logElasticP + "-" + id[:4]).Id(id).Type("http").Doc(d).DocAsUpsert(true)
 		logElasticPut(elt, logElasticCh)
 	}
