@@ -9,7 +9,6 @@ require (
 	github.com/coreos/go-oidc v0.0.0-20170711233713-a4973d9a4225
 	github.com/crewjam/saml v0.4.14
 	github.com/dghubble/sessions v0.1.1-0.20190708004734-43a1b0057682
-	github.com/drewolson/testflight v1.0.1-0.20180720172621-260f5843f623
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/securecookie v1.1.2-0.20191028042304-61b4ad17eb88
 	github.com/gorilla/websocket v1.4.2
