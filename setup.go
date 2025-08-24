@@ -1,7 +1,9 @@
 package beyond
 
 import (
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"net/http"
@@ -22,8 +24,7 @@ var (
 
 	cookieAge  = flag.Int("cookie-age", 3600*6, "MaxAge setting in seconds")
 	cookieDom  = flag.String("cookie-domain", ".myorg.net", "session cookie domain")
-	cookieKey1 = flag.String("cookie-key1", "", `key1 of cookie crypto pair (example: "t8yG1gmeEyeb7pQpw544UeCTyDfPkE6u")`)
-	cookieKey2 = flag.String("cookie-key2", "", `key2 of cookie crypto pair (example: "Q599vrruZRhLFC144thCRZpyHM7qGDjt")`)
+	cookieKey  = flag.String("cookie-key", "", `64-char hex key for cookie encryption (example: "t8yG1gmeEyeb7pQpw544UeCTyDfPkE6uQ599vrruZRhLFC144thCRZpyHM7qGDjt")`)
 	cookieName = flag.String("cookie-name", "beyond", "session cookie name")
 
 	fouroFourMessage = flag.String("404-message", "Please contact the application administrators to setup access.", "message to use when backend apps do not respond")
@@ -38,17 +39,45 @@ var (
 	tlsConfig = &tls.Config{}
 )
 
+// generateRandomKey creates a 32-byte random key encoded as hex string
+func generateRandomKey() (string, error) {
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(key), nil
+}
+
 // Setup initializes all configured modules
 func Setup() error {
 	if *debug {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
-	if len(*cookieKey1) == 0 {
-		return fmt.Errorf("missing cookie key")
+	if len(*cookieKey) == 0 {
+		// Generate random cookie key for single instance deployments
+		key, err := generateRandomKey()
+		if err != nil {
+			return fmt.Errorf("failed to generate cookie key: %v", err)
+		}
+		*cookieKey = key
+		
+		logrus.Warn("No cookie key provided, generated random key for this session:")
+		logrus.Warnf("  -cookie-key %s", *cookieKey)
+		logrus.Warn("IMPORTANT: Sessions will not persist across restarts. Set explicit key for production use.")
 	}
 
-	// setup encrypted cookies
-	store = sessions.NewCookieStore([]byte(*cookieKey1), []byte(*cookieKey2))
+	// Validate key length (should be 64 hex chars = 32 bytes)
+	if len(*cookieKey) != 64 {
+		return fmt.Errorf("cookie key must be exactly 64 hex characters (32 bytes), got %d", len(*cookieKey))
+	}
+
+	// setup encrypted cookies - use the key for both authentication and encryption
+	keyBytes, err := hex.DecodeString(*cookieKey)
+	if err != nil {
+		return fmt.Errorf("cookie key must be valid hex: %v", err)
+	}
+	store = sessions.NewCookieStore(keyBytes, keyBytes)
 	store.Config.Domain = *cookieDom
 	store.Config.MaxAge = *cookieAge
 	store.Config.HTTPOnly = true
@@ -76,7 +105,7 @@ func Setup() error {
 		ghpHosts[k] = true
 	}
 
-	err := dockerSetup(dURLs...)
+	err = dockerSetup(dURLs...)
 	if err == nil {
 		err = federateSetup()
 	}

@@ -1,5 +1,4 @@
-[![Build Status](https://travis-ci.org/presbrey/beyond.svg?branch=master)](https://travis-ci.org/presbrey/beyond)
-[![codecov](https://codecov.io/gh/presbrey/beyond/branch/master/graph/badge.svg)](https://codecov.io/gh/presbrey/beyond)
+[![Go](https://github.com/presbrey/beyond/actions/workflows/go.yml/badge.svg)](https://github.com/presbrey/beyond/actions/workflows/go.yml)
 [![Docker](https://github.com/presbrey/beyond/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/presbrey/beyond/actions/workflows/docker-publish.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/presbrey/beyond)](https://goreportcard.com/report/github.com/presbrey/beyond)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -28,6 +27,97 @@ or:
 $ go get -u -x github.com/presbrey/beyond
 ```
 ## Usage
+
+### Example Configurations
+
+#### Basic OIDC Setup
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -beyond-host beyond.example.com \
+  -cookie-domain .example.com \
+  -oidc-issuer https://your-idp.com/oidc \
+  -oidc-client-id your-client-id \
+  -oidc-client-secret your-client-secret
+```
+
+#### OIDC with Access Control
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -beyond-host beyond.example.com \
+  -cookie-domain .example.com \
+  -oidc-issuer https://accounts.google.com \
+  -oidc-client-id your-google-client-id \
+  -oidc-client-secret your-google-client-secret \
+  -allowlist-url https://raw.githubusercontent.com/yourorg/config/main/allowlist.json \
+  -fence-url https://raw.githubusercontent.com/yourorg/config/main/fence.json \
+  -sites-url https://raw.githubusercontent.com/yourorg/config/main/sites.json
+```
+
+#### SAML with Docker Registry Support
+```bash
+docker run --rm -p 80:80 \
+  -v /path/to/certs:/certs \
+  presbrey/beyond httpd \
+  -beyond-host beyond.example.com \
+  -cookie-domain .example.com \
+  -saml-metadata-url https://your-idp.com/metadata \
+  -saml-cert-file /certs/saml.cert \
+  -saml-key-file /certs/saml.key \
+  -docker-urls https://harbor.example.com,https://ghcr.example.com
+```
+
+#### GitHub Enterprise with Token Auth
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -beyond-host beyond.example.com \
+  -cookie-domain .example.com \
+  -oidc-issuer https://github.example.com \
+  -oidc-client-id your-github-app-id \
+  -oidc-client-secret your-github-app-secret \
+  -token-base https://api.github.example.com/user \
+  -docker-urls https://docker.pkg.github.example.com
+```
+
+#### Production with Elasticsearch Logging
+```bash
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -beyond-host beyond.example.com \
+  -cookie-domain .example.com \
+  -oidc-issuer https://login.example.com \
+  -oidc-client-id production-client-id \
+  -oidc-client-secret production-client-secret \
+  -allowlist-url https://config.example.com/allowlist.json \
+  -fence-url https://config.example.com/fence.json \
+  -sites-url https://config.example.com/sites.json \
+  -log-elastic https://elasticsearch.example.com:9200 \
+  -log-json \
+  -error-email support@example.com
+```
+
+### Cookie Key Management
+
+Beyond requires a single cryptographic key for session cookie encryption. You have two options:
+
+#### Option 1: Auto-Generated Key (Development/Testing)
+If no cookie key is provided, Beyond will automatically generate a secure random key at startup and log it:
+```
+WARN[0000] No cookie key provided, generated random key for this session:
+WARN[0000]   -cookie-key a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+WARN[0000] IMPORTANT: Sessions will not persist across restarts. Set explicit key for production use.
+```
+
+#### Option 2: Explicit Key (Production)
+For production deployments, always set an explicit key to maintain session persistence:
+```bash
+# Generate key once and reuse it
+export COOKIE_KEY=$(openssl rand -hex 32)
+
+docker run --rm -p 80:80 presbrey/beyond httpd \
+  -cookie-key "$COOKIE_KEY" \
+  # ... other parameters
+```
+
+### Command Line Options
 ```
 $ docker run --rm -p 80:80 presbrey/beyond httpd --help
   -401-code int
@@ -42,12 +132,12 @@ $ docker run --rm -p 80:80 presbrey/beyond httpd --help
     	MaxAge setting in seconds (default 21600)
   -cookie-domain string
     	session cookie domain (default ".myorg.net")
-  -cookie-key1 string
-    	key1 of cookie crypto pair (example: "t8yG1gmeEyeb7pQpw544UeCTyDfPkE6u")
-  -cookie-key2 string
-    	key2 of cookie crypto pair (example: "Q599vrruZRhLFC144thCRZpyHM7qGDjt")
+  -cookie-key string
+    	64-char hex key for cookie encryption (example: "t8yG1gmeEyeb7pQpw544UeCTyDfPkE6uQ599vrruZRhLFC144thCRZpyHM7qGDjt")
   -cookie-name string
     	session cookie name (default "beyond")
+  -debug
+    	set debug loglevel (default true)
   -docker-auth-scheme string
     	(only for testing) (default "https")
   -docker-url string
@@ -66,6 +156,8 @@ $ docker run --rm -p 80:80 presbrey/beyond httpd --help
     	internal secret, 64 chars
   -fence-url string
     	URL to user fencing config (eg. https://github.com/myorg/beyond-config/main/raw/fence.json)
+  -ghp-hosts string
+    	CSV of github packages domains (default "ghp.myorg.net")
   -header-prefix string
     	prefix extra headers with this string (default "Beyond")
   -health-path string
@@ -81,7 +173,7 @@ $ docker run --rm -p 80:80 presbrey/beyond httpd --help
   -insecure-skip-verify
     	allow TLS backends without valid certificates
   -learn-dial-timeout duration
-    	skip port after this connection timeout (default 5s)
+    	skip port after this connection timeout (default 8s)
   -learn-http-ports string
     	after HTTPS, try these HTTP ports (csv) (default "80,8080,6000,6060,7000,7070,8000,9000,9200,15672")
   -learn-https-ports string
