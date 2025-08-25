@@ -6,7 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/cogolabs/wait v0.0.0-20200531154825-18b10c34d00e
-	github.com/coreos/go-oidc v0.0.0-20170711233713-a4973d9a4225
+	github.com/coreos/go-oidc v2.4.0+incompatible
 	github.com/crewjam/saml v0.4.14
 	github.com/dghubble/sessions v0.1.1-0.20190708004734-43a1b0057682
 	github.com/google/uuid v1.6.0
@@ -33,9 +33,9 @@ require (
 	github.com/mailru/easyjson v0.7.2-0.20200312161126-f5d75e7e500c // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/pquerna/cachecontrol v0.0.0-20170706045224-5475d973ea70 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
+	github.com/pquerna/cachecontrol v0.2.0 // indirect
+	golang.org/x/crypto v0.41.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	gopkg.in/go-jose/go-jose.v2 v2.6.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
