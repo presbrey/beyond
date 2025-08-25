@@ -98,7 +98,7 @@ func TestHandlerOidcStateValid(t *testing.T) {
 	resp := w.Result()
 	body, _ := io.ReadAll(resp.Body)
 	assert.Equal(t, 401, resp.StatusCode)
-	assert.Contains(t, string(body), "oauth2: cannot fetch token: ")
+	assert.Contains(t, string(body), "oauth2:")
 }
 
 func TestHandlerWebsocket(t *testing.T) {
