@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/presbrey/beyond/internal/authz"
+
 	"github.com/koding/websocketproxy"
 )
 
@@ -14,8 +16,8 @@ var (
 )
 
 func http2ws(r *http.Request) (*url.URL, error) {
-	rewrite := hostRewriteDetailed(r.Host)
-	
+	rewrite := authz.HostRewriteDetailed(r.Host)
+
 	var target string
 	if rewrite.FullURL != "" {
 		// Convert http/https to ws/wss for WebSocket
@@ -40,7 +42,7 @@ func http2ws(r *http.Request) (*url.URL, error) {
 
 func nexthop(w http.ResponseWriter, r *http.Request) {
 	var (
-		rewrite   = hostRewriteDetailed(r.Host)
+		rewrite   = authz.HostRewriteDetailed(r.Host)
 		nextHost  = rewrite.Host
 		nextProxy http.Handler
 	)
@@ -95,19 +97,15 @@ func reproxy() error {
 		return true
 	})
 	var lerr error
-	sites.RLock()
-	for _, v := range sites.m {
-		for x := range v {
-			u, err := url.Parse(x)
-			if err != nil {
-				lerr = err
-			} else {
-				delete(cleanup, u.Host)
-				hostProxy.Store(u.Host, newSHRP(u))
-			}
+	authz.GetSitesURLs(func(x string) {
+		u, err := url.Parse(x)
+		if err != nil {
+			lerr = err
+		} else {
+			delete(cleanup, u.Host)
+			hostProxy.Store(u.Host, newSHRP(u))
 		}
-	}
-	sites.RUnlock()
+	})
 	for key := range cleanup {
 		hostProxy.Delete(key)
 	}

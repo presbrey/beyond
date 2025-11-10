@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+
+	"github.com/presbrey/beyond/internal/authn"
+	"github.com/presbrey/beyond/internal/docker"
 )
 
 var (
@@ -18,19 +21,26 @@ func NewMux() http.Handler {
 		fmt.Fprint(rw, *healthReply)
 	})
 
-	mux.HandleFunc(*host+"/federate", federate)
-	mux.HandleFunc(*host+"/federate/verify", federateVerify)
+	mux.HandleFunc(*host+"/federate", func(w http.ResponseWriter, r *http.Request) {
+		authn.Federate(w, r, *authn.CookieName, login)
+	})
+	mux.HandleFunc(*host+"/federate/verify", authn.FederateVerify)
 
 	mux.HandleFunc(*host+"/launch", handleLaunch)
 	mux.HandleFunc(*host+"/oidc", handleOIDC)
-	if samlSP != nil {
-		mux.HandleFunc(*host+"/saml/", samlSP.ServeHTTP)
+	if authn.SAMLMiddleware() != nil {
+		mux.HandleFunc(*host+"/saml/", authn.SAMLMiddleware().ServeHTTP)
 	}
 	mux.Handle(*host+"/", http.RedirectHandler(*homeURL, http.StatusTemporaryRedirect))
 
-	for _, ds := range dockerServers {
+	for _, ds := range docker.GetServers() {
 		ds.RegisterHandlers(mux)
 	}
+
+	// Set docker package dependencies
+	docker.Debug = debug
+	docker.LogRoundtrip = logRoundtrip
+	docker.Handler = handler
 
 	mux.HandleFunc("/", handler)
 

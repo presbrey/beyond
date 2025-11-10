@@ -2,9 +2,8 @@ package beyond
 
 import (
 	"log"
-	"time"
 
-	"github.com/cogolabs/wait"
+	"github.com/presbrey/pkg/wait"
 )
 
 func init() {
@@ -12,5 +11,5 @@ func init() {
 	log.SetFlags(log.Flags() | log.Lshortfile)
 
 	// wait for networking
-	wait.ForNetwork(5, time.Second)
+	wait.ForNetwork()
 }

@@ -1,4 +1,4 @@
-package beyond
+package authn
 
 import (
 	"encoding/json"
@@ -8,12 +8,13 @@ import (
 	"time"
 
 	cache "github.com/patrickmn/go-cache"
+	"github.com/sirupsen/logrus"
 )
 
 var (
-	tokenBase = flag.String("token-base", "", "token server URL prefix (eg. https://api.github.com/user)")
-	tokenGQL  = flag.String("token-graphql", "", "GraphQL URL for auth (eg. https://api.github.com/graphql)")
-	tokenGQLQ = flag.String("token-graphql-query", `{"query": "query { viewer { login }}"}`, "")
+	TokenBase = flag.String("token-base", "", "token server URL prefix (eg. https://api.github.com/user)")
+	TokenGQL  = flag.String("token-graphql", "", "GraphQL URL for auth (eg. https://api.github.com/graphql)")
+	TokenGQLQ = flag.String("token-graphql-query", `{"query": "query { viewer { login }}"}`, "")
 
 	tokenCache = cache.New(10*time.Minute, 10*time.Minute)
 
@@ -23,10 +24,23 @@ var (
 	}
 )
 
-// {"data":{"viewer":{"login":"github[bot]"}}}
+// TokenUser represents a user from token authentication
+type TokenUser struct {
+	Login string
+	Email string
+}
 
-func tokenAuth(r *http.Request) string {
-	if *tokenBase == "" && *tokenGQL == "" {
+type gqlResponse struct {
+	Data struct {
+		Viewer struct {
+			Login string `json:"login"`
+		} `json:"viewer"`
+	} `json:"data"`
+}
+
+// TokenAuth extracts and validates a token from the request, returning the user login
+func TokenAuth(r *http.Request) string {
+	if *TokenBase == "" && *TokenGQL == "" {
 		return ""
 	}
 
@@ -59,17 +73,17 @@ func tokenAuth(r *http.Request) string {
 	)
 
 	switch {
-	case *tokenGQL != "":
-		req, err = http.NewRequest("POST", *tokenGQL, strings.NewReader(*tokenGQLQ))
+	case *TokenGQL != "":
+		req, err = http.NewRequest("POST", *TokenGQL, strings.NewReader(*TokenGQLQ))
 		if err != nil {
-			Error(err)
+			logrus.Error(err)
 			return ""
 		}
 
 	default:
-		req, err = http.NewRequest("GET", *tokenBase, nil)
+		req, err = http.NewRequest("GET", *TokenBase, nil)
 		if err != nil {
-			Error(err)
+			logrus.Error(err)
 			return ""
 		}
 
@@ -78,7 +92,7 @@ func tokenAuth(r *http.Request) string {
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		Error(err)
+		logrus.Error(err)
 		return ""
 	}
 	defer resp.Body.Close()
@@ -88,37 +102,24 @@ func tokenAuth(r *http.Request) string {
 	}
 
 	switch {
-	case *tokenGQL != "":
+	case *TokenGQL != "":
 		v := new(gqlResponse)
 		err = json.NewDecoder(resp.Body).Decode(v)
 		if err != nil {
-			Error(err)
+			logrus.Error(err)
 			return ""
 		}
 		tokenCache.Set(token, v.Data.Viewer.Login, cache.DefaultExpiration)
 		return v.Data.Viewer.Login
 
 	default:
-		v := &tokenUser{}
+		v := &TokenUser{}
 		err = json.NewDecoder(resp.Body).Decode(v)
 		if err != nil {
-			Error(err)
+			logrus.Error(err)
 			return ""
 		}
 		tokenCache.Set(token, v.Login, cache.DefaultExpiration)
 		return v.Login
 	}
-}
-
-type tokenUser struct {
-	Login string
-	Email string
-}
-
-type gqlResponse struct {
-	Data struct {
-		Viewer struct {
-			Login string `json:"login"`
-		} `json:"viewer"`
-	} `json:"data"`
 }

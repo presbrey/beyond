@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/presbrey/beyond/internal/authn"
+	"github.com/presbrey/beyond/internal/authz"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,17 +18,18 @@ func init() {
 	// Setup file transport for ACL
 	t := &http.Transport{}
 	t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
-	httpACL.Transport = t
-	
+	client := &http.Client{Transport: t}
+	authz.SetHTTPClient(client)
+
 	// Load the fence and sites configuration for testing
 	cwd, _ := os.Getwd()
-	*fenceURL = "file://" + cwd + "/example/fence.json"
-	*sitesURL = "file://" + cwd + "/example/sites.json"
-	refreshFence()
-	refreshSites()
-	
+	*authz.FenceURL = "file://" + cwd + "/example/fence.json"
+	*authz.SitesURL = "file://" + cwd + "/example/sites.json"
+	authz.RefreshFence()
+	authz.RefreshSites()
+
 	// Setup token authentication
-	*tokenBase = tokenServer.URL + "/?access_token="
+	*authn.TokenBase = tokenServer.URL + "/?access_token="
 }
 
 var (
@@ -52,7 +55,7 @@ var (
 		if user == "" && strings.Contains(authorization, " ") {
 			user = tokenTestTokenUsers[strings.Split(authorization, " ")[1]]
 		}
-		err := json.NewEncoder(w).Encode(tokenUser{Login: user})
+		err := json.NewEncoder(w).Encode(authn.TokenUser{Login: user})
 		if err != nil {
 			errorHandler(w, 500, err.Error())
 		}
@@ -60,18 +63,18 @@ var (
 )
 
 func TestTokenError(t *testing.T) {
-	*tokenBase = "https://foo.bar?"
+	*authn.TokenBase = "https://foo.bar?"
 
 	r, err := http.NewRequest("GET", "/", nil)
 	assert.NoError(t, err)
 
-	assert.Equal(t, "", tokenAuth(r))
+	assert.Equal(t, "", authn.TokenAuth(r))
 	r.Header.Set("Authorization", "token test")
-	assert.Equal(t, "", tokenAuth(r))
+	assert.Equal(t, "", authn.TokenAuth(r))
 
-	*tokenBase = tokenServer.URL + "/?access_token="
+	*authn.TokenBase = tokenServer.URL + "/?access_token="
 	r.Header.Set("Authorization", "token invalid")
-	assert.Equal(t, "", tokenAuth(r))
+	assert.Equal(t, "", authn.TokenAuth(r))
 }
 
 func TestTokenBasic(t *testing.T) {
@@ -79,14 +82,14 @@ func TestTokenBasic(t *testing.T) {
 	assert.NoError(t, err)
 
 	r.SetBasicAuth(tokenTestUserTokens["user1"], "x-oauth-basic")
-	login1 := tokenAuth(r)
+	login1 := authn.TokenAuth(r)
 	r.SetBasicAuth("", tokenTestUserTokens["user1"])
-	login2 := tokenAuth(r)
+	login2 := authn.TokenAuth(r)
 	assert.Equal(t, "user1", login1)
 	assert.Equal(t, "user1", login2)
 
 	r.SetBasicAuth(tokenTestUserTokens["user1"], "foobar")
-	assert.Equal(t, "", tokenAuth(r))
+	assert.Equal(t, "", authn.TokenAuth(r))
 }
 
 func TestTokenFederation(t *testing.T) {
@@ -94,39 +97,41 @@ func TestTokenFederation(t *testing.T) {
 	assert.NoError(t, err)
 
 	r.Header.Set("Authorization", "token test")
-	assert.Equal(t, "", tokenAuth(r))
+	assert.Equal(t, "", authn.TokenAuth(r))
 
 	r.Header.Set("Authorization", "token "+tokenTestUserTokens["user1"])
-	login1 := tokenAuth(r)
-	login2 := tokenAuth(r)
+	login1 := authn.TokenAuth(r)
+	login2 := authn.TokenAuth(r)
 	assert.Equal(t, "user1", login1)
 	assert.Equal(t, "user1", login2)
 }
 
 func TestTokenSuccess(t *testing.T) {
 	// Test token authentication with Authorization header
-	request := httptest.NewRequest("GET", "/ip", nil)
+	request := httptest.NewRequest("GET", "/", nil)
 	request.Header.Set("Authorization", "Token "+tokenTestUserTokens["user1"])
-	request.Host = "httpbin.org"
+	request.Host = "checkip.amazonaws.com"
 	w := httptest.NewRecorder()
 	testMux.ServeHTTP(w, request)
-	
+
 	resp := w.Result()
 	body, _ := io.ReadAll(resp.Body)
 	assert.Equal(t, 200, resp.StatusCode)
-	assert.Equal(t, "{\n  \"origin\"", strings.Split(string(body), ":")[0])
+	// AWS checkip returns an IP address followed by newline
+	assert.Regexp(t, `^\d+\.\d+\.\d+\.\d+\n$`, string(body))
 
 	// Test token authentication with Basic Auth
-	request = httptest.NewRequest("GET", "/ip", nil)
+	request = httptest.NewRequest("GET", "/", nil)
 	request.SetBasicAuth("user1", tokenTestUserTokens["user1"])
-	request.Host = "httpbin.org"
+	request.Host = "checkip.amazonaws.com"
 	w = httptest.NewRecorder()
 	testMux.ServeHTTP(w, request)
-	
+
 	resp = w.Result()
 	body, _ = io.ReadAll(resp.Body)
 	assert.Equal(t, 200, resp.StatusCode)
-	assert.Equal(t, "{\n  \"origin\"", strings.Split(string(body), ":")[0])
+	// AWS checkip returns an IP address followed by newline
+	assert.Regexp(t, `^\d+\.\d+\.\d+\.\d+\n$`, string(body))
 
 	// Test ACL 403 - vendor@gmail.com should be blocked by ACL
 	request = httptest.NewRequest("GET", "/", nil)
@@ -134,7 +139,7 @@ func TestTokenSuccess(t *testing.T) {
 	request.Host = "example.com"
 	w = httptest.NewRecorder()
 	testMux.ServeHTTP(w, request)
-	
+
 	resp = w.Result()
 	body, _ = io.ReadAll(resp.Body)
 	assert.Equal(t, 403, resp.StatusCode)

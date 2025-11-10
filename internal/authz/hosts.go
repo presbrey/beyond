@@ -1,4 +1,4 @@
-package beyond
+package authz
 
 import (
 	"encoding/json"
@@ -17,13 +17,14 @@ type HostRewrite struct {
 }
 
 var (
-	hostsCSV  = flag.String("hosts-csv", "", "rewrite nexthop hosts (format: from1=to1,from2=to2)")
-	hostsURL  = flag.String("hosts-url", "", "URL to host mapping config (eg. https://github.com/myorg/beyond-config/main/raw/hosts.json)")
-	hostsOnly = flag.Bool("hosts-only", false, "only allow requests to hosts in the host mapping")
+	HostsCSV  = flag.String("hosts-csv", "", "rewrite nexthop hosts (format: from1=to1,from2=to2)")
+	HostsURL  = flag.String("hosts-url", "", "URL to host mapping config (eg. https://github.com/myorg/beyond-config/main/raw/hosts.json)")
+	HostsOnly = flag.Bool("hosts-only", false, "only allow requests to hosts in the host mapping")
 	hostsMap  = map[string]string{}
 )
 
-func hostsSetup(cfg string) error {
+// HostsSetup initializes host mappings from CSV configuration
+func HostsSetup(cfg string) error {
 	if cfg == "" {
 		return nil
 	}
@@ -37,12 +38,13 @@ func hostsSetup(cfg string) error {
 	return nil
 }
 
-func refreshHosts() error {
-	if *hostsURL == "" {
+// RefreshHosts loads host mappings from URL configuration
+func RefreshHosts() error {
+	if *HostsURL == "" {
 		return nil
 	}
 
-	resp, err := httpACL.Get(*hostsURL)
+	resp, err := httpACL.Get(*HostsURL)
 	if err != nil {
 		return err
 	}
@@ -62,8 +64,9 @@ func refreshHosts() error {
 	return nil
 }
 
-func hostAllowed(host string) bool {
-	if !*hostsOnly {
+// HostAllowed checks if a host is allowed based on hosts-only configuration
+func HostAllowed(host string) bool {
+	if !*HostsOnly {
 		return true
 	}
 
@@ -80,7 +83,8 @@ func hostAllowed(host string) bool {
 	return false
 }
 
-func hostRewriteDetailed(host string) *HostRewrite {
+// HostRewriteDetailed returns detailed host rewrite information
+func HostRewriteDetailed(host string) *HostRewrite {
 	result := &HostRewrite{Host: host}
 
 	if len(hostsMap) == 0 {
@@ -112,7 +116,17 @@ func hostRewriteDetailed(host string) *HostRewrite {
 	return result
 }
 
-func hostRewrite(host string) string {
-	// Backward compatibility - return just the host
-	return hostRewriteDetailed(host).Host
+// RewriteHost returns the rewritten host (backward compatibility)
+func RewriteHost(host string) string {
+	return HostRewriteDetailed(host).Host
+}
+
+// GetHostsMap returns the current host mappings (for testing)
+func GetHostsMap() map[string]string {
+	return hostsMap
+}
+
+// SetHostsMap sets the host mappings (for testing)
+func SetHostsMap(m map[string]string) {
+	hostsMap = m
 }

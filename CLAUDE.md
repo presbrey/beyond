@@ -4,123 +4,104 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Beyond is a BeyondCorp-inspired authentication proxy that controls access to services beyond your perimeter network. It implements zero-trust security patterns with support for OIDC, OAuth2, and SAML authentication.
+Beyond is a zero-trust access proxy inspired by Google BeyondCorp. It controls access to services beyond your perimeter network using authentication (OIDC, OAuth2, SAML) and fine-grained access control policies.
 
-## Architecture
+## Build and Test Commands
 
-### Core Components
+```bash
+# Build all packages
+go build -v ./...
 
-- **Authentication Layer**: Supports multiple authentication methods (OIDC, OAuth2, SAML)
-  - `oidc.go` - OpenID Connect implementation
-  - `saml.go` - SAML authentication handling  
-  - `token.go` - OAuth2 token validation
-  - `federate.go` - Federation support for cross-domain access
+# Build the main binary
+go build -v ./cmd/httpd
 
-- **Proxy Layer**: HTTP/WebSocket reverse proxy with smart backend discovery
-  - `proxy.go` - Core reverse proxy implementation
-  - `learn.go` - Automatic backend port discovery
-  - `masq.go` - Host rewriting functionality
+# Run all tests
+go test -v ./...
 
-- **Access Control**: Configuration-driven access management
-  - `acl.go` - Access control lists and allowlisting
-  - Sites/fence/allowlist configuration via JSON URLs
+# Run tests for a specific package
+go test -v ./[package_name]_test.go
 
-- **Specialized Handlers**:
-  - `docker.go` - Docker registry API compatibility
-  - `web.go` - Web UI and error pages
-  - `log.go` - ElasticSearch integration for analytics
+# Run a single test
+go test -v -run TestFunctionName
+```
+
+## Architecture Overview
 
 ### Request Flow
+1. **Entry Point**: `cmd/httpd/main.go` creates HTTP server with `beyond.NewMux()` handler
+2. **Setup**: `setup.go:Setup()` initializes all modules (OIDC, SAML, ACLs, logging, etc.)
+3. **Routing**: `web.go:NewMux()` mounts handlers for health, auth, federation, Docker registry, and default proxy
+4. **Main Handler**: `handler.go:handler()` processes each request through this flow:
+   - Check session cookie authentication
+   - Check OAuth2 token authentication
+   - Apply allowlist (bypass auth for allowlisted paths/hosts)
+   - Check host-only restriction (if `-hosts-only` enabled)
+   - Force login if unauthenticated
+   - Apply fence (user-specific access restrictions)
+   - Forward to backend via `nexthop()`
 
-1. Incoming requests hit the main handler (`handler.go`)
-2. Authentication is verified via session cookies
-3. Unauthenticated requests redirect to `/launch` for auth flow
-4. Authenticated requests are proxied to backend services
-5. Backend ports are learned automatically or from configuration
+### Backend Connection Flow (`proxy.go`)
+1. **Host Rewriting**: `hostRewriteDetailed()` translates incoming host to backend target
+   - Supports protocol switching (http/https)
+   - Supports port remapping
+   - Preserves subdomains during translation
+2. **Nexthop Learning**: If backend not cached and `-learn-nexthops=true`:
+   - `learn.go:learn()` probes common HTTPS ports (443, 4443, 6443, 8443, 9443, 9090)
+   - Then tries HTTP ports (80, 8080, etc.)
+   - Caches successful backends in `hostProxy` sync.Map
+3. **Proxying**: Creates reverse proxy or WebSocket proxy depending on Upgrade header
 
-## Development Commands
+### Authentication Flow
+- **OIDC** (`oidc.go`): `/launch` redirects to IdP, `/oidc` handles callback and sets session
+- **SAML** (`saml.go`): `/launch` initiates SAML flow, `/saml/*` handles assertions
+- **Token Auth** (`token.go`): Validates bearer tokens or query params against configured endpoints
 
-### Building
+### Access Control Layers
+1. **Allowlist** (`acl.go`): Bypass auth for specific host, host:method, or path patterns
+2. **Host Filtering** (`masq.go`): When `-hosts-only` is set, only allow configured hosts
+3. **Fence** (`acl.go`): User-specific restrictions mapping users to allowed site zones
+4. **Sites** (`acl.go`): Named zones containing lists of allowed backend URLs
 
-```bash
-# Build the main httpd binary
-go build ./cmd/httpd
+### Special Features
+- **Docker Registry** (`docker.go`): Intercepts `/v2/` endpoints for registry authentication
+- **Federation** (`federate.go`): Allows Beyond instances to trust each other's auth
+- **Host Masquerading** (`masq.go`): Rewrites backend hostnames with protocol/port support
+- **Elasticsearch Logging** (`log.go`): Bulk commits HTTP logs to configured ES clusters
 
-# Install to $GOPATH/bin
-go install ./cmd/httpd
+## Configuration Files
 
-# Build with Docker
-docker build -t beyond .
-```
+External JSON configuration URLs are supported for:
+- **Allowlist** (`-allowlist-url`): `{"host": [...], "host:method": [...], "path": [...]}`
+- **Fence** (`-fence-url`): `{"user@example.com": ["zone1", "zone2"]}`
+- **Sites** (`-sites-url`): `{"zone1": ["https://app1.example.com", "https://app2.example.com"]}`
+- **Hosts** (`-hosts-url`): `{"old.example.com": "https://new.example.com:8443"}`
 
-### Testing
+## Key Implementation Details
 
-```bash
-# Run all tests
-go test ./...
+### Session Management
+- Cookie-based sessions using gorilla/securecookie
+- Cookie key auto-generated if not provided (logs warning)
+- Sessions store user email, OAuth state, and next URL
 
-# Run tests with coverage
-go test -cover ./...
+### TLS and Backend Trust
+- `-insecure-skip-verify` allows untrusted backend certificates
+- Applies to both HTTP transport and WebSocket connections
+- TLS config shared via `tlsConfig` global variable
 
-# Run specific test
-go test -run TestHandlerPing
+### WebSocket Handling
+- Detects `Upgrade: websocket` header in `proxy.go:nexthop()`
+- Converts http/https schemes to ws/wss in `http2ws()`
+- Uses koding/websocketproxy with custom director for headers
 
-# Run tests with verbose output
-go test -v ./...
-```
+### Error Handling
+- Custom error pages with configurable color and support email
+- `-401-code` defaults to 418 (teapot) to trigger browser auth properly
+- Health check endpoint at `/healthz/ping` (configurable)
 
-### Running
+## Testing Patterns
 
-```bash
-# Run with minimal configuration (see example/ for configs)
-go run cmd/httpd/main.go \
-  -beyond-host beyond.example.com \
-  -cookie-domain .example.com \
-  -cookie-key1 "$(openssl rand -hex 16)" \
-  -cookie-key2 "$(openssl rand -hex 16)" \
-  -oidc-issuer https://your-idp.com/oidc \
-  -oidc-client-id your-client-id \
-  -oidc-client-secret your-client-secret
-
-# Run with Docker
-docker run --rm -p 80:80 presbrey/beyond httpd [flags]
-```
-
-### Code Quality
-
-```bash
-# Format code
-go fmt ./...
-
-# Run linter (install: go install golang.org/x/lint/golint@latest)
-golint ./...
-
-# Vet code
-go vet ./...
-```
-
-## Key Implementation Notes
-
-- Session management uses Gorilla sessions with secure cookies
-- WebSocket support includes optional compression
-- Automatic backend discovery tries HTTPS first, then HTTP ports
-- ElasticSearch logging is optional but recommended for analytics
-- Docker registry support handles authentication for private registries
-- Federation allows trust relationships between Beyond instances
-
-## Testing Approach
-
-- Tests use `testflight` for HTTP testing
-- Mock services created with `httptest`
-- Test utilities in `test_utils.go` provide shared setup
-- Integration tests cover full authentication flows
-- Unit tests focus on individual components
-
-## Configuration
-
-The service is configured via command-line flags. Key configurations:
-- Authentication (OIDC/SAML) credentials and endpoints
-- Cookie settings for session management
-- Backend discovery and port preferences
-- Optional ElasticSearch for logging
-- Access control via JSON configuration URLs
+Tests use standard Go testing with:
+- `httptest` for HTTP server testing
+- Table-driven tests for multiple scenarios
+- Mock authentication for handler tests
+- Temporary test servers for integration tests

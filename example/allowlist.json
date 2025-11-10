@@ -1,6 +1,8 @@
 {
  "host": {
   "httpbin.org": true,
+  "1.1.1.1": true,
+  "checkip.amazonaws.com": true,
   "echo.websocket.org": true,
   "nonexistent.example.test": true
  },

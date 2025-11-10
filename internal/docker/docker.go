@@ -1,4 +1,4 @@
-package beyond
+package docker
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/presbrey/beyond/internal/authn"
+
 	"github.com/gorilla/securecookie"
 	log "github.com/sirupsen/logrus"
 )
@@ -19,46 +21,57 @@ import (
 // via https://docs.docker.com/registry/spec/auth/token/
 
 var (
-	dockerBase   = flag.String("docker-url", "https://docker.myorg.net", "when there is only one (legacy option)")
-	dockerURLs   = flag.String("docker-urls", "https://harbor.myorg.net,https://ghcr.myorg.net", "csv of docker server base URLs")
-	dockerScheme = flag.String("docker-auth-scheme", "https", "(only for testing)")
+	DockerBase   = flag.String("docker-url", "https://docker.myorg.net", "when there is only one (legacy option)")
+	DockerURLs   = flag.String("docker-urls", "https://harbor.myorg.net,https://ghcr.myorg.net", "csv of docker server base URLs")
+	DockerScheme = flag.String("docker-auth-scheme", "https", "(only for testing)")
 
-	dockerServers = map[string]*dockerServer{}
+	servers = map[string]*Server{}
 
-	ghpHost  = flag.String("ghp-hosts", "ghp.myorg.net", "CSV of github packages domains")
+	GHPHost  = flag.String("ghp-hosts", "ghp.myorg.net", "CSV of github packages domains")
 	ghpHosts = map[string]bool{}
 )
 
-func dockerSetup(urls ...string) error {
+// Debug flag reference (set by main package)
+var Debug *bool
+
+// LogRoundtrip function (set by main package)
+var LogRoundtrip func(*http.Response)
+
+// Handler function (set by main package)
+var Handler func(http.ResponseWriter, *http.Request)
+
+func Setup(urls ...string) error {
 	for _, u := range urls {
 		dockerURL, err := url.Parse(u)
 		if err != nil {
 			return err
 		}
 
-		srv := new(dockerServer)
+		srv := new(Server)
 		srv.host = dockerURL.Hostname()
 		srv.proxy = httputil.NewSingleHostReverseProxy(dockerURL)
 		srv.proxy.ModifyResponse = srv.ModifyResponse
-		dockerServers[srv.host] = srv
+		servers[srv.host] = srv
 	}
 	return nil
 }
 
-type dockerServer struct {
+type Server struct {
 	host  string
 	proxy *httputil.ReverseProxy
 }
 
-func (ds *dockerServer) ModifyResponse(resp *http.Response) error {
-	logRoundtrip(resp)
+func (ds *Server) ModifyResponse(resp *http.Response) error {
+	if LogRoundtrip != nil {
+		LogRoundtrip(resp)
+	}
 	if ghpHosts[resp.Request.Host] {
 		return nil
 	}
 
 	wwwAuth := resp.Header.Get("WWW-Authenticate")
 	if wwwAuth != "" && strings.Contains(wwwAuth, "/v2/auth") {
-		resp.Header.Set("WWW-Authenticate", `Bearer realm="`+*dockerScheme+`://`+resp.Request.Host+`/v2/auth",service="`+ds.host+`"`)
+		resp.Header.Set("WWW-Authenticate", `Bearer realm="`+*DockerScheme+`://`+resp.Request.Host+`/v2/auth",service="`+ds.host+`"`)
 	}
 	if resp.Request.URL.Path != "/v2/auth" || resp.StatusCode != 200 {
 		return nil
@@ -76,10 +89,10 @@ func (ds *dockerServer) ModifyResponse(resp *http.Response) error {
 			claim64 := strings.Split(token, ".")[1]
 			data, err := base64.RawStdEncoding.DecodeString(claim64)
 			if err == nil {
-				claim := new(dockerClaimSet)
+				claim := new(ClaimSet)
 				err = json.Unmarshal(data, claim)
 				if err == nil && claim.Context.Kind == "user" {
-					v["token"], err = securecookie.EncodeMulti("token", v["token"], store.Codecs...)
+					v["token"], err = securecookie.EncodeMulti("token", v["token"], authn.GetStore().Codecs...)
 					if err == nil {
 						var buf bytes.Buffer
 						err = json.NewEncoder(&buf).Encode(v)
@@ -100,24 +113,26 @@ func (ds *dockerServer) ModifyResponse(resp *http.Response) error {
 	return err
 }
 
-func (ds *dockerServer) RegisterHandlers(mux *http.ServeMux) {
+func (ds *Server) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc(ds.host+"/v2/", func(rw http.ResponseWriter, r *http.Request) {
 		ua := strings.ToLower(r.UserAgent())
 		ua1 := strings.HasPrefix(ua, "docker/")
 		ua2 := strings.HasPrefix(ua, "docker-client/")
 		ua3 := strings.HasPrefix(ua, "go-")
 		if !ua1 && !ua2 && !ua3 {
-			handler(rw, r)
+			if Handler != nil {
+				Handler(rw, r)
+			}
 			return
 		}
-		if *debug {
+		if Debug != nil && *Debug {
 			log.Debugf("[DS] %+v\n", r)
 		}
 		ds.ServeHTTP(rw, r)
 	})
 }
 
-func (ds *dockerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (ds *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ghpHosts[r.Host] {
 		if r.Header.Get("Authorization") == "" {
 			w.Header().Set("Docker-Distribution-API-Version", "registry/2.0")
@@ -137,7 +152,7 @@ func (ds *dockerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		token := strings.Split(r.Header.Get("Authorization"), " ")
 		if len(token) > 1 && token[0] == "Bearer" {
 			bearer := token[1]
-			err := securecookie.DecodeMulti("token", bearer, &bearer, store.Codecs...)
+			err := securecookie.DecodeMulti("token", bearer, &bearer, authn.GetStore().Codecs...)
 			if err == nil {
 				allow = true
 				r.Header.Set("Authorization", "Bearer "+bearer)
@@ -150,8 +165,18 @@ func (ds *dockerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
-	w.Header().Set("WWW-Authenticate", `Bearer realm="`+*dockerScheme+`://`+r.Host+`/v2/auth",service="`+ds.host+`"`)
+	w.Header().Set("WWW-Authenticate", `Bearer realm="`+*DockerScheme+`://`+r.Host+`/v2/auth",service="`+ds.host+`"`)
 	w.WriteHeader(401)
+}
+
+// GetServers returns the map of docker servers
+func GetServers() map[string]*Server {
+	return servers
+}
+
+// SetGHPHosts sets the GitHub packages hosts
+func SetGHPHosts(hosts map[string]bool) {
+	ghpHosts = hosts
 }
 
 // https://docs.docker.com/registry/spec/auth/jwt/
@@ -193,7 +218,7 @@ func (ds *dockerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //		"nbf": 1593907501,
 //		"sub": "joe"
 //	}
-type dockerClaimSet struct {
+type ClaimSet struct {
 	Access []struct {
 		Type    string   `json:"type"`
 		Name    string   `json:"name"`

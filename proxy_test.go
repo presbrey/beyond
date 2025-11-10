@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
+	"github.com/presbrey/beyond/internal/authz"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,11 +29,11 @@ func TestH2W(t *testing.T) {
 }
 
 func TestReproxyParseError(t *testing.T) {
-	test := sites.m["test"]
-	sites.m["test"] = map[string]bool{":": true}
+	test := authz.GetSitesMap("test")
+	authz.SetSitesMap("test", map[string]bool{":": true})
 	err := reproxy()
 	assert.Contains(t, err.Error(), "missing protocol scheme")
-	sites.m["test"] = test
+	authz.SetSitesMap("test", test)
 }
 
 func TestWebsocketEcho(t *testing.T) {

@@ -1,36 +1,37 @@
 package beyond
 
 import (
-	"crypto/rand"
 	"fmt"
 	"net/http"
 	"net/url"
 
+	"github.com/presbrey/beyond/internal/authn"
+	"github.com/presbrey/beyond/internal/authz"
 	"golang.org/x/oauth2"
 )
 
 func handleLaunch(w http.ResponseWriter, r *http.Request) {
 	setCacheControl(w)
-	session, err := store.Get(r, *cookieName)
+	session, err := authn.GetSession(r, *authn.CookieName)
 	if err != nil {
-		session = store.New(*cookieName)
+		session = authn.NewSession(*authn.CookieName)
 	}
-	if samlSP != nil && samlFilter(w, r) {
+	if authn.SAMLMiddleware() != nil && authn.SAMLFilter(w, r, nil, *authn.CookieName) {
 		next, _ := session.Values["next"].(string)
 		jsRedirect(w, next)
 		return
 	}
 
 	session.Values["next"] = r.URL.Query().Get("next")
-	state, _ := randhex32()
+	state, _ := authn.RandHex32()
 	session.Values["state"] = state
 	session.Save(w)
 
-	if *samlIDP == "" {
-		next := oidcConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	if *authn.SAMLIDP == "" {
+		next := authn.OIDCAuthCodeURL(state, oauth2.AccessTypeOffline)
 		jsRedirect(w, next)
 	} else {
-		samlSP.HandleStartAuthFlow(w, r)
+		authn.SAMLHandleStartAuthFlow(w, r)
 	}
 }
 
@@ -42,7 +43,7 @@ func handleOIDC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := store.Get(r, *cookieName)
+	session, err := authn.GetSession(r, *authn.CookieName)
 	if err != nil {
 		errorHandler(w, 400, err.Error())
 		return
@@ -51,7 +52,7 @@ func handleOIDC(w http.ResponseWriter, r *http.Request) {
 		errorHandler(w, 403, "Invalid Browser State")
 		return
 	}
-	email, err := oidcVerify(r.URL.Query().Get("code"))
+	email, err := authn.OIDCVerify(r.URL.Query().Get("code"))
 	if err != nil {
 		errorHandler(w, 401, err.Error())
 		return
@@ -67,28 +68,28 @@ func handleOIDC(w http.ResponseWriter, r *http.Request) {
 
 func handler(w http.ResponseWriter, r *http.Request) {
 	// check for cookie authentication
-	session, err := store.Get(r, *cookieName)
+	session, err := authn.GetSession(r, *authn.CookieName)
 	if err != nil {
-		session = store.New(*cookieName)
+		session = authn.NewSession(*authn.CookieName)
 	}
 	user, _ := session.Values["user"].(string)
 
 	// check for oauth2 token
 	if user == "" {
-		user = tokenAuth(r)
+		user = authn.TokenAuth(r)
 	}
 	if user != "" {
 		r.Header.Set(*headerPrefix+"-User", user)
 	}
 
 	// apply allowlist
-	if allowlisted(r) {
+	if authz.Allowlisted(r) {
 		nexthop(w, r)
 		return
 	}
 
 	// check host-only restriction
-	if !hostAllowed(r.Host) {
+	if !authz.HostAllowed(r.Host) {
 		errorHandler(w, 403, "Host not allowed")
 		return
 	}
@@ -100,7 +101,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// apply fence
-	if deny(r, user) {
+	if authz.Deny(r, user) {
 		errorHandler(w, 403, "Access Denied")
 		return
 	}
@@ -144,10 +145,4 @@ func setCacheControl(w http.ResponseWriter) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-}
-
-func randhex32() (string, error) {
-	b := make([]byte, 32)
-	_, err := rand.Read(b)
-	return fmt.Sprintf("%x", b), err
 }

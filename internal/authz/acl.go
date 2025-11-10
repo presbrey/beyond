@@ -1,4 +1,4 @@
-package beyond
+package authz
 
 import (
 	"encoding/json"
@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	fenceURL     = flag.String("fence-url", "", "URL to user fencing config (eg. https://github.com/myorg/beyond-config/main/raw/fence.json)")
-	sitesURL     = flag.String("sites-url", "", "URL to allowed sites config (eg. https://github.com/myorg/beyond-config/main/raw/sites.json)")
-	allowlistURL = flag.String("allowlist-url", "", "URL to site allowlist (eg. https://github.com/myorg/beyond-config/main/raw/allowlist.json)")
+	FenceURL     = flag.String("fence-url", "", "URL to user fencing config (eg. https://github.com/myorg/beyond-config/main/raw/fence.json)")
+	SitesURL     = flag.String("sites-url", "", "URL to allowed sites config (eg. https://github.com/myorg/beyond-config/main/raw/sites.json)")
+	AllowlistURL = flag.String("allowlist-url", "", "URL to site allowlist (eg. https://github.com/myorg/beyond-config/main/raw/allowlist.json)")
 
 	fence     = concurrentMapMapBool{m: map[string]map[string]bool{}}
 	sites     = concurrentMapMapBool{m: map[string]map[string]bool{}}
@@ -25,12 +25,18 @@ type concurrentMapMapBool struct {
 	m map[string]map[string]bool
 }
 
-func refreshFence() error {
-	if *fenceURL == "" {
+// SetHTTPClient sets the HTTP client for ACL operations (useful for testing)
+func SetHTTPClient(client *http.Client) {
+	httpACL = client
+}
+
+// RefreshFence loads the user fencing configuration
+func RefreshFence() error {
+	if *FenceURL == "" {
 		return nil
 	}
 
-	resp, err := httpACL.Get(*fenceURL)
+	resp, err := httpACL.Get(*FenceURL)
 	if err != nil {
 		return err
 	}
@@ -51,12 +57,13 @@ func refreshFence() error {
 	return nil
 }
 
-func refreshSites() error {
-	if *sitesURL == "" {
+// RefreshSites loads the allowed sites configuration
+func RefreshSites() error {
+	if *SitesURL == "" {
 		return nil
 	}
 
-	resp, err := httpACL.Get(*sitesURL)
+	resp, err := httpACL.Get(*SitesURL)
 	if err != nil {
 		return err
 	}
@@ -79,12 +86,13 @@ func refreshSites() error {
 	return nil
 }
 
-func refreshAllowlist() error {
-	if *allowlistURL == "" {
+// RefreshAllowlist loads the site allowlist configuration
+func RefreshAllowlist() error {
+	if *AllowlistURL == "" {
 		return nil
 	}
 
-	resp, err := httpACL.Get(*allowlistURL)
+	resp, err := httpACL.Get(*AllowlistURL)
 	if err != nil {
 		return err
 	}
@@ -94,7 +102,8 @@ func refreshAllowlist() error {
 	return json.NewDecoder(resp.Body).Decode(&allowlist.m)
 }
 
-func allowlisted(r *http.Request) bool {
+// Allowlisted checks if a request is on the allowlist
+func Allowlisted(r *http.Request) bool {
 	allowlist.RLock()
 	allow := allowlist.m["host"][r.Host]
 	hostM := allowlist.m["host:method"][r.Host+":"+r.Method]
@@ -112,7 +121,8 @@ func allowlisted(r *http.Request) bool {
 	return allow
 }
 
-func deny(r *http.Request, user string) bool {
+// Deny checks if a user is denied access based on fence and sites configuration
+func Deny(r *http.Request, user string) bool {
 	fence.RLock()
 	zones, ok := fence.m[user]
 	fence.RUnlock()
@@ -131,4 +141,29 @@ func deny(r *http.Request, user string) bool {
 		}
 	}
 	return true
+}
+
+// GetSitesURLs returns all site URLs for proxy configuration
+func GetSitesURLs(fn func(siteURL string)) {
+	sites.RLock()
+	defer sites.RUnlock()
+	for _, v := range sites.m {
+		for x := range v {
+			fn(x)
+		}
+	}
+}
+
+// GetSitesMap returns the sites map for a given key (for testing)
+func GetSitesMap(key string) map[string]bool {
+	sites.RLock()
+	defer sites.RUnlock()
+	return sites.m[key]
+}
+
+// SetSitesMap sets the sites map for a given key (for testing)
+func SetSitesMap(key string, value map[string]bool) {
+	sites.Lock()
+	defer sites.Unlock()
+	sites.m[key] = value
 }

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	oidc "github.com/coreos/go-oidc"
-	"github.com/gorilla/securecookie"
+	"github.com/presbrey/beyond/internal/authn"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"
 )
@@ -72,12 +72,12 @@ func (o *oidcMock) Verify(ctx context.Context, raw string) (*oidc.IDToken, error
 	}
 	token := &oidc.IDToken{}
 
-	getOIDCClaims = func(claims *oidcClaims, tokenID *oidc.IDToken) error {
+	authn.GetOIDCClaims = func(claims *authn.OIDCClaims, tokenID *oidc.IDToken) error {
 		claims.Email = "user3@domain3.com"
 		return nil
 	}
 	if raw == "claimsErr" {
-		getOIDCClaims = func(_ *oidcClaims, _ *oidc.IDToken) error {
+		authn.GetOIDCClaims = func(_ *authn.OIDCClaims, _ *oidc.IDToken) error {
 			return fmt.Errorf("test error")
 		}
 	}
@@ -93,26 +93,30 @@ func init() {
 }
 
 func TestOIDCSetup(t *testing.T) {
-	assert.Contains(t, oidcSetup("ftp://localhost").Error(), "unsupported protocol scheme")
+	assert.Contains(t, authn.OIDCSetup("ftp://localhost", *host).Error(), "unsupported protocol scheme")
 }
 
 func TestOIDCSuccess(t *testing.T) {
 	mock := &oidcMock{}
-	oidcConfig = mock
-	oidcVerifier = mock
+	authn.OIDCConfig = mock
+	authn.OIDCVerifier = mock
 
 	// Test OIDC callback with state and next parameters
 	request := httptest.NewRequest("GET", "/oidc?state=barbaz&next=localhost/next", nil)
-	
-	vals := map[string]interface{}{"state": "barbaz", "next": oidcServer.URL + "/next"}
-	cookieValue, err := securecookie.EncodeMulti(*cookieName, &vals, store.Codecs...)
+
+	session := authn.NewSession(*authn.CookieName)
+	session.Values["state"] = "barbaz"
+	session.Values["next"] = oidcServer.URL + "/next"
+	recorder := httptest.NewRecorder()
+	err := authn.GetStore().Save(recorder, session)
 	assert.NoError(t, err)
-	request.AddCookie(&http.Cookie{Name: *cookieName, Value: cookieValue})
+	cookie := recorder.Header().Get("Set-Cookie")
+	request.Header.Set("Cookie", cookie)
 
 	request.Host = *host
 	w := httptest.NewRecorder()
 	testMux.ServeHTTP(w, request)
-	
+
 	resp := w.Result()
 	body, _ := io.ReadAll(resp.Body)
 	// The OIDC handler redirects to the next URL, so we expect a 302
@@ -123,9 +127,9 @@ func TestOIDCSuccess(t *testing.T) {
 	b := strings.NewReader("POSTED")
 	request, err = http.NewRequest("POST", oidcServer.URL+"/next", b)
 	assert.NoError(t, err)
-	request.AddCookie(&http.Cookie{Name: *cookieName, Value: cookieValue})
+	request.Header.Set("Cookie", cookie)
 	request.Host = *host
-	
+
 	resp, err = http.DefaultClient.Do(request)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
@@ -136,22 +140,22 @@ func TestOIDCSuccess(t *testing.T) {
 
 func TestOIDCVerifyToken(t *testing.T) {
 	token := &oauth2.Token{}
-	s, err := oidcVerifyToken(context.TODO(), token)
+	s, err := authn.OIDCVerifyToken(context.TODO(), token)
 	assert.Empty(t, s)
 	assert.Equal(t, "missing ID token", err.Error())
 }
 
 func TestOIDCVerifyTokenID(t *testing.T) {
-	email, err := oidcVerifyTokenID(context.TODO(), "err")
+	email, err := authn.OIDCVerifyTokenID(context.TODO(), "err")
 	assert.Equal(t, "", email)
 	assert.Equal(t, http.ErrHijacked, err)
 
 	testErr := fmt.Errorf("test error")
-	email, err = oidcVerifyTokenID(context.TODO(), "claimsErr")
+	email, err = authn.OIDCVerifyTokenID(context.TODO(), "claimsErr")
 	assert.Equal(t, "", email)
 	assert.Equal(t, testErr, err)
 
-	email, err = oidcVerifyTokenID(context.TODO(), "rawID")
+	email, err = authn.OIDCVerifyTokenID(context.TODO(), "rawID")
 	assert.Equal(t, "user3@domain3.com", email)
 	assert.NoError(t, err)
 }

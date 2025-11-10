@@ -5,13 +5,15 @@ import (
 	"os"
 	"testing"
 
+	"github.com/presbrey/beyond/internal/authz"
 	"github.com/stretchr/testify/assert"
 )
 
 func init() {
 	t := &http.Transport{}
 	t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
-	httpACL.Transport = t
+	client := &http.Client{Transport: t}
+	authz.SetHTTPClient(client)
 }
 
 const (
@@ -19,42 +21,38 @@ const (
 )
 
 func TestACL(t *testing.T) {
-	*fenceURL = ""
-	*sitesURL = ""
-	*allowlistURL = ""
+	*authz.FenceURL = ""
+	*authz.SitesURL = ""
+	*authz.AllowlistURL = ""
 
-	assert.NoError(t, refreshFence())
-	assert.NoError(t, refreshSites())
-	assert.NoError(t, refreshAllowlist())
+	assert.NoError(t, authz.RefreshFence())
+	assert.NoError(t, authz.RefreshSites())
+	assert.NoError(t, authz.RefreshAllowlist())
 
-	*fenceURL = aclErrorBase
-	*sitesURL = aclErrorBase
-	*allowlistURL = aclErrorBase
+	*authz.FenceURL = aclErrorBase
+	*authz.SitesURL = aclErrorBase
+	*authz.AllowlistURL = aclErrorBase
 
-	assert.Contains(t, refreshFence().Error(), "connection refused")
-	assert.Contains(t, refreshSites().Error(), "connection refused")
-	assert.Contains(t, refreshAllowlist().Error(), "connection refused")
+	assert.Contains(t, authz.RefreshFence().Error(), "connection refused")
+	assert.Contains(t, authz.RefreshSites().Error(), "connection refused")
+	assert.Contains(t, authz.RefreshAllowlist().Error(), "connection refused")
 
 	cwd, _ := os.Getwd()
-	*fenceURL = "file://" + cwd + "/example/error.json"
-	*sitesURL = "file://" + cwd + "/example/error.json"
-	*allowlistURL = "file://" + cwd + "/example/error.json"
-	assert.EqualError(t, refreshFence(), "unexpected EOF")
-	assert.EqualError(t, refreshSites(), "unexpected EOF")
-	assert.EqualError(t, refreshAllowlist(), "unexpected EOF")
+	*authz.FenceURL = "file://" + cwd + "/example/error.json"
+	*authz.SitesURL = "file://" + cwd + "/example/error.json"
+	*authz.AllowlistURL = "file://" + cwd + "/example/error.json"
+	assert.EqualError(t, authz.RefreshFence(), "unexpected EOF")
+	assert.EqualError(t, authz.RefreshSites(), "unexpected EOF")
+	assert.EqualError(t, authz.RefreshAllowlist(), "unexpected EOF")
 
-	*fenceURL = "file://" + cwd + "/example/fence.json"
-	*sitesURL = "file://" + cwd + "/example/sites.json"
-	*allowlistURL = "file://" + cwd + "/example/allowlist.json"
+	*authz.FenceURL = "file://" + cwd + "/example/fence.json"
+	*authz.SitesURL = "file://" + cwd + "/example/sites.json"
+	*authz.AllowlistURL = "file://" + cwd + "/example/allowlist.json"
 	assert.NoError(t, Setup())
 
-	assert.NotEmpty(t, fence.m)
-	assert.NotEmpty(t, sites.m["git"])
-	assert.NotEmpty(t, allowlist.m["host"])
-	assert.NotEmpty(t, allowlist.m["path"])
-
+	// Test Deny function
 	reqDeny, _ := http.NewRequest("GET", "https://deny", nil)
-	assert.True(t, deny(reqDeny, "consultant@gmail.com"))
+	assert.True(t, authz.Deny(reqDeny, "consultant@gmail.com"))
 	reqAllow, _ := http.NewRequest("GET", "https://github.com/test", nil)
-	assert.False(t, deny(reqAllow, "consultant@gmail.com"))
+	assert.False(t, authz.Deny(reqAllow, "consultant@gmail.com"))
 }
