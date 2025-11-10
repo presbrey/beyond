@@ -22,6 +22,7 @@ var (
 // Session represents a user session
 type Session struct {
 	Values map[string]interface{}
+	sess   *sessions.Session
 }
 
 // SessionStore interface for session management
@@ -40,19 +41,20 @@ func (w *cookieStoreWrapper) Get(r *http.Request, name string) (*Session, error)
 	if err != nil {
 		return nil, err
 	}
-	return &Session{Values: sess.Values}, nil
+	return &Session{Values: sess.Values, sess: sess}, nil
 }
 
 func (w *cookieStoreWrapper) New(name string) *Session {
 	sess := w.store.New(name)
-	return &Session{Values: sess.Values}
+	return &Session{Values: sess.Values, sess: sess}
 }
 
 // Save saves the session
 func (s *Session) Save(w http.ResponseWriter) error {
-	// This is a simplified version - in practice, you'd need to store the underlying session
-	// For now, we'll keep using the global store directly in the handlers
-	return nil
+	if s == nil || s.sess == nil {
+		return fmt.Errorf("session not initialized")
+	}
+	return GetStore().Save(w, s.sess)
 }
 
 // generateRandomKey creates a 32-byte random key encoded as hex string
