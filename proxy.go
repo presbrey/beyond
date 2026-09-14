@@ -1,9 +1,11 @@
 package beyond
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/presbrey/beyond/internal/authz"
@@ -18,26 +20,26 @@ var (
 func http2ws(r *http.Request) (*url.URL, error) {
 	rewrite := authz.HostRewriteDetailed(r.Host)
 
-	var target string
 	if rewrite.FullURL != "" {
-		// Convert http/https to ws/wss for WebSocket
-		if rewrite.Scheme == "https" {
-			target = "wss://" + rewrite.Host
-			if rewrite.Port != "" {
-				target += ":" + rewrite.Port
-			}
-		} else {
-			target = "ws://" + rewrite.Host
-			if rewrite.Port != "" {
-				target += ":" + rewrite.Port
-			}
+		target, err := url.Parse(rewrite.FullURL)
+		if err != nil {
+			return nil, err
 		}
-		target += r.URL.RequestURI()
-	} else {
-		// Default to secure WebSocket
-		target = "wss://" + rewrite.Host + r.URL.RequestURI()
+		if target.Scheme == "https" {
+			target.Scheme = "wss"
+		} else {
+			target.Scheme = "ws"
+		}
+		target.RawPath = strings.TrimSuffix(target.EscapedPath(), "/") + r.URL.EscapedPath()
+		target.Path = strings.TrimSuffix(target.Path, "/") + r.URL.Path
+		if target.RawQuery != "" && r.URL.RawQuery != "" {
+			target.RawQuery += "&" + r.URL.RawQuery
+		} else {
+			target.RawQuery += r.URL.RawQuery
+		}
+		return target, nil
 	}
-	return url.Parse(target)
+	return url.Parse("wss://" + rewrite.Host + r.URL.RequestURI())
 }
 
 func nexthop(w http.ResponseWriter, r *http.Request) {
@@ -55,14 +57,14 @@ func nexthop(w http.ResponseWriter, r *http.Request) {
 		targetBase = nextHost
 	}
 
-	v, ok := hostProxy.Load(nextHost)
+	v, ok := hostProxy.Load(targetBase)
 	if ok {
 		nextProxy, ok = v.(*httputil.ReverseProxy)
 	}
 	if !ok && *learnNexthops {
 		nextProxy = learn(targetBase)
 		if nextProxy != nil {
-			hostProxy.Store(nextHost, nextProxy)
+			hostProxy.Store(targetBase, nextProxy)
 			ok = true
 		}
 	}
@@ -74,7 +76,12 @@ func nexthop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Header.Get("Upgrade") == "websocket" {
-		nextProxy, _ = websocketproxyNew(r)
+		var err error
+		nextProxy, err = websocketproxyNew(r)
+		if err != nil {
+			errorHandler(w, http.StatusBadGateway, "Invalid WebSocket backend")
+			return
+		}
 	}
 	nextProxy.ServeHTTP(w, r)
 }
@@ -102,8 +109,11 @@ func reproxy() error {
 		if err != nil {
 			lerr = err
 		} else {
-			delete(cleanup, u.Host)
-			hostProxy.Store(u.Host, newSHRP(u))
+			p := newSHRP(u)
+			for _, key := range []string{u.Host, u.String()} {
+				delete(cleanup, key)
+				hostProxy.Store(key, p)
+			}
 		}
 	})
 	for key := range cleanup {
@@ -119,6 +129,12 @@ func websocketproxyDirector(incoming *http.Request, out http.Header) {
 
 func websocketproxyNew(r *http.Request) (*websocketproxy.WebsocketProxy, error) {
 	ws, err := http2ws(r)
+	if err != nil {
+		return nil, err
+	}
+	if ws.Host == "" {
+		return nil, fmt.Errorf("missing WebSocket backend host")
+	}
 	p := websocketproxy.NewProxy(ws)
 	p.Director = websocketproxyDirector
 	return p, err

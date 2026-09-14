@@ -14,7 +14,7 @@ func init() {
 func TestSetupAutoGenerate(t *testing.T) {
 	prev := *authn.CookieKey
 	*authn.CookieKey = ""
-	err := Setup()
+	err := authn.SetupSession()
 	assert.NoError(t, err)
 	assert.Len(t, *authn.CookieKey, 64) // Should be 64 hex chars
 	*authn.CookieKey = prev
@@ -23,7 +23,7 @@ func TestSetupAutoGenerate(t *testing.T) {
 func TestSetupBadKeyLength(t *testing.T) {
 	prev := *authn.CookieKey
 	*authn.CookieKey = "short"
-	err := Setup()
+	err := authn.SetupSession()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cookie key must be exactly 64 hex characters")
 	*authn.CookieKey = prev
@@ -32,7 +32,7 @@ func TestSetupBadKeyLength(t *testing.T) {
 func TestSetupBadKeyFormat(t *testing.T) {
 	prev := *authn.CookieKey
 	*authn.CookieKey = "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
-	err := Setup()
+	err := authn.SetupSession()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cookie key must be valid hex")
 	*authn.CookieKey = prev

@@ -1,7 +1,7 @@
-FROM golang:1.24
+FROM docker.io/library/golang:1.26
 
-ADD . /go/src/github.com/presbrey/beyond
-WORKDIR /go/src/github.com/presbrey/beyond
+WORKDIR /src
+COPY . .
 RUN go install ./cmd/httpd
 
 WORKDIR /go

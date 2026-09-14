@@ -106,31 +106,36 @@ func SAMLSetup(host string) error {
 }
 
 // SAMLFilter processes SAML authentication and sets the user session
-func SAMLFilter(w http.ResponseWriter, r *http.Request, sessionStore SessionStore, cookieName string) bool {
+func SAMLFilter(w http.ResponseWriter, r *http.Request, sessionStore SessionStore, cookieName string) (bool, error) {
 	if samlSP == nil {
-		return false
+		return false, nil
 	}
 
 	samlSession, _ := samlSP.Session.GetSession(r)
 	if _, ok := samlSession.(samlsp.SessionWithAttributes); !ok {
 		// sessions without mappings will redirect infinitely
-		return false
+		return false, nil
 	}
 	samlAttributes := samlSession.(samlsp.SessionWithAttributes).GetAttributes()
 	user := samlAttributes.Get(*SAMLAttr)
 	if user == "" {
 		// nil IdP assertion unlikely
-		return false
+		return false, nil
 	}
 
+	if sessionStore == nil {
+		sessionStore = &cookieStoreWrapper{store: store}
+	}
 	session, err := sessionStore.Get(r, cookieName)
 	if err != nil {
 		session = sessionStore.New(cookieName)
 	}
 	session.Values["user"] = user
-	session.Save(w)
+	if err := session.Save(w); err != nil {
+		return false, err
+	}
 	samlSP.Session.DeleteSession(w, r)
-	return true
+	return true, nil
 }
 
 // SAMLMiddleware returns the SAML middleware for handling SAML endpoints

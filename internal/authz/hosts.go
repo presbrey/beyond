@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 )
@@ -23,17 +24,25 @@ var (
 	hostsMap  = map[string]string{}
 )
 
+func init() {
+	flag.StringVar(HostsCSV, "host-masq", "", "legacy alias for -hosts-csv")
+}
+
 // HostsSetup initializes host mappings from CSV configuration
 func HostsSetup(cfg string) error {
 	if cfg == "" {
 		return nil
 	}
 	for _, line := range strings.Split(cfg, ",") {
-		elts := strings.Split(line, "=")
+		elts := strings.SplitN(line, "=", 2)
 		if len(elts) < 2 {
 			return fmt.Errorf("missing equals assignment in: %+v", line)
 		}
-		hostsMap[elts[0]] = elts[1]
+		key, value := strings.TrimSpace(elts[0]), strings.TrimSpace(elts[1])
+		if err := validateMapping(key, value); err != nil {
+			return err
+		}
+		hostsMap[key] = value
 	}
 	return nil
 }
@@ -56,6 +65,12 @@ func RefreshHosts() error {
 		return err
 	}
 
+	for k, v := range config {
+		if err := validateMapping(k, v); err != nil {
+			return err
+		}
+	}
+
 	// Merge URL config with command-line config
 	for k, v := range config {
 		hostsMap[k] = v
@@ -64,54 +79,98 @@ func RefreshHosts() error {
 	return nil
 }
 
-// HostAllowed checks if a host is allowed based on hosts-only configuration
+// splitAuthority normalizes a hostname while retaining its optional port.
+func splitAuthority(authority string) (string, string) {
+	host, port, err := net.SplitHostPort(authority)
+	if err != nil {
+		host, port = strings.Trim(authority, "[]"), ""
+	}
+	return strings.ToLower(strings.TrimSuffix(host, ".")), port
+}
+
+func joinAuthority(host, port string) string {
+	if port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	if strings.Contains(host, ":") {
+		return "[" + host + "]"
+	}
+	return host
+}
+
+func validateMapping(key, value string) error {
+	if key == "" || value == "" || strings.ContainsAny(key, "/ \t") {
+		return fmt.Errorf("invalid host mapping %q=%q", key, value)
+	}
+	target := value
+	if !strings.Contains(target, "://") {
+		target = "http://" + target
+	}
+	u, err := url.Parse(target)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
+		return fmt.Errorf("invalid host mapping target %q", value)
+	}
+	return nil
+}
+
+// matchingHost chooses the most specific mapping at a DNS label boundary.
+func matchingHost(authority string) (string, string, bool) {
+	host, port := splitAuthority(authority)
+	var bestKey, bestValue string
+	for key, value := range hostsMap {
+		keyHost, keyPort := splitAuthority(key)
+		if keyHost == "" || (keyPort != "" && keyPort != port) {
+			continue
+		}
+		matches := host == keyHost
+		if net.ParseIP(keyHost) == nil {
+			matches = matches || strings.HasSuffix(host, "."+keyHost)
+		}
+		bestHost, bestPort := splitAuthority(bestKey)
+		moreSpecific := len(keyHost) > len(bestHost) ||
+			(len(keyHost) == len(bestHost) && keyPort != "" && bestPort == "")
+		tied := len(keyHost) == len(bestHost) && (keyPort == "") == (bestPort == "")
+		if matches && (moreSpecific || (tied && key < bestKey)) {
+			bestKey, bestValue = key, value
+		}
+	}
+	return bestKey, bestValue, bestKey != ""
+}
+
+// HostAllowed checks if a host is allowed based on hosts-only configuration.
 func HostAllowed(host string) bool {
 	if !*HostsOnly {
 		return true
 	}
-
-	// If hosts-only is enabled, check if host is in the mapping
-	if len(hostsMap) == 0 {
-		return false
-	}
-
-	for k := range hostsMap {
-		if strings.HasSuffix(host, k) {
-			return true
-		}
-	}
-	return false
+	_, _, matched := matchingHost(host)
+	return matched
 }
 
-// HostRewriteDetailed returns detailed host rewrite information
-func HostRewriteDetailed(host string) *HostRewrite {
-	result := &HostRewrite{Host: host}
-
-	if len(hostsMap) == 0 {
+// HostRewriteDetailed returns a consistent hostname and URL for the backend.
+func HostRewriteDetailed(authority string) *HostRewrite {
+	result := &HostRewrite{Host: authority}
+	key, value, matched := matchingHost(authority)
+	if !matched {
 		return result
 	}
-
-	for k, v := range hostsMap {
-		if strings.HasSuffix(host, k) {
-			// Check if replacement value is a full URL
-			if strings.Contains(v, "://") {
-				// Parse the URL to extract components
-				if parsedURL, err := url.Parse(v); err == nil {
-					result.Scheme = parsedURL.Scheme
-					result.Port = parsedURL.Port()
-					result.FullURL = v
-					// For subdomain preservation, do string replacement on the hostname part
-					result.Host = strings.Replace(host, k, parsedURL.Hostname(), -1)
-				} else {
-					// Fallback to simple string replacement if URL parsing fails
-					result.Host = strings.Replace(host, k, v, -1)
-				}
-			} else {
-				// Simple host replacement (backward compatibility)
-				result.Host = strings.Replace(host, k, v, -1)
-			}
-			break
+	host, incomingPort := splitAuthority(authority)
+	keyHost, _ := splitAuthority(key)
+	prefix := strings.TrimSuffix(host, keyHost)
+	if strings.Contains(value, "://") {
+		u, err := url.Parse(value)
+		if err != nil || u.Hostname() == "" {
+			return result
 		}
+		result.Host = prefix + u.Hostname()
+		result.Scheme, result.Port = u.Scheme, u.Port()
+		u.Host = joinAuthority(result.Host, result.Port)
+		result.FullURL = u.String()
+	} else {
+		targetHost, targetPort := splitAuthority(value)
+		if targetPort == "" {
+			targetPort = incomingPort
+		}
+		result.Host = joinAuthority(prefix+targetHost, targetPort)
 	}
 	return result
 }

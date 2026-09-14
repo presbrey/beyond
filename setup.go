@@ -44,12 +44,6 @@ func Setup() error {
 		return err
 	}
 
-	if len(*authn.CookieKey) == 0 {
-		logrus.Warn("No cookie key provided, generated random key for this session:")
-		logrus.Warnf("  -cookie-key %s", *authn.CookieKey)
-		logrus.Warn("IMPORTANT: Sessions will not persist across restarts. Set explicit key for production use.")
-	}
-
 	// setup backend encryption
 	tlsConfig.InsecureSkipVerify = *skipVerify
 	http.DefaultTransport = &http.Transport{TLSClientConfig: tlsConfig}

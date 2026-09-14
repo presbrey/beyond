@@ -2,9 +2,11 @@ package beyond
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -43,7 +45,7 @@ var (
 	}
 
 	tokenServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("access_token") == "invalid" {
+		if r.Header.Get("Authorization") == "Bearer invalid" {
 			_, err := io.WriteString(w, "{")
 			if err != nil {
 				errorHandler(w, 500, err.Error())
@@ -63,7 +65,7 @@ var (
 )
 
 func TestTokenError(t *testing.T) {
-	*authn.TokenBase = "https://foo.bar?"
+	*authn.TokenBase = ":"
 
 	r, err := http.NewRequest("GET", "/", nil)
 	assert.NoError(t, err)
@@ -107,31 +109,38 @@ func TestTokenFederation(t *testing.T) {
 }
 
 func TestTokenSuccess(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "authenticated backend") }))
+	defer backend.Close()
+	target, err := url.Parse(backend.URL)
+	assert.NoError(t, err)
+	const backendHost = "token.example.test"
+	hostProxy.Store(backendHost, newSHRP(target))
+	defer hostProxy.Delete(backendHost)
 	// Test token authentication with Authorization header
 	request := httptest.NewRequest("GET", "/", nil)
 	request.Header.Set("Authorization", "Token "+tokenTestUserTokens["user1"])
-	request.Host = "checkip.amazonaws.com"
+	request.Host = backendHost
 	w := httptest.NewRecorder()
 	testMux.ServeHTTP(w, request)
 
 	resp := w.Result()
 	body, _ := io.ReadAll(resp.Body)
 	assert.Equal(t, 200, resp.StatusCode)
-	// AWS checkip returns an IP address followed by newline
-	assert.Regexp(t, `^\d+\.\d+\.\d+\.\d+\n$`, string(body))
+	// The local backend is reached after successful authentication.
+	assert.Equal(t, "authenticated backend", string(body))
 
 	// Test token authentication with Basic Auth
 	request = httptest.NewRequest("GET", "/", nil)
 	request.SetBasicAuth("user1", tokenTestUserTokens["user1"])
-	request.Host = "checkip.amazonaws.com"
+	request.Host = backendHost
 	w = httptest.NewRecorder()
 	testMux.ServeHTTP(w, request)
 
 	resp = w.Result()
 	body, _ = io.ReadAll(resp.Body)
 	assert.Equal(t, 200, resp.StatusCode)
-	// AWS checkip returns an IP address followed by newline
-	assert.Regexp(t, `^\d+\.\d+\.\d+\.\d+\n$`, string(body))
+	// The local backend is reached after successful authentication.
+	assert.Equal(t, "authenticated backend", string(body))
 
 	// Test ACL 403 - vendor@gmail.com should be blocked by ACL
 	request = httptest.NewRequest("GET", "/", nil)

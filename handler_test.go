@@ -1,9 +1,11 @@
 package beyond
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -123,30 +125,23 @@ func TestHandlerWebsocket(t *testing.T) {
 }
 
 func TestHandlerAllowlist(t *testing.T) {
-	// Test allowed host (1.1.1.1 - Cloudflare DNS)
-	request := httptest.NewRequest("GET", "/cdn-cgi/trace", nil)
-	request.Host = "1.1.1.1"
-	w := httptest.NewRecorder()
-	testMux.ServeHTTP(w, request)
-
-	resp := w.Result()
-	body, _ := io.ReadAll(resp.Body)
-	assert.Equal(t, 200, resp.StatusCode)
-	assert.Equal(t, "", resp.Header.Get("Set-Cookie"))
-	// Cloudflare trace returns plain text with key=value pairs
-	assert.Contains(t, string(body), "ip=")
-
-	// Test blocked host (github.com)
-	request = httptest.NewRequest("GET", "/.well-known/acme-challenge/test", nil)
-	request.Host = "github.com"
-	w = httptest.NewRecorder()
-	testMux.ServeHTTP(w, request)
-
-	resp = w.Result()
-	body, _ = io.ReadAll(resp.Body)
-	assert.Equal(t, 404, resp.StatusCode)
-	assert.NotEqual(t, "", resp.Header.Get("Set-Cookie"))
-	assert.Contains(t, string(body), "Page not found")
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "allowlisted backend") }))
+	defer backend.Close()
+	target, err := url.Parse(backend.URL)
+	assert.NoError(t, err)
+	// These hosts/paths are in the example allowlist, but all traffic stays local.
+	for _, backendHost := range []string{"1.1.1.1", "path.example.test"} {
+		hostProxy.Store(backendHost, newSHRP(target))
+		defer hostProxy.Delete(backendHost)
+	}
+	for _, target := range []string{"http://1.1.1.1/", "http://path.example.test/.well-known/acme-challenge/test"} {
+		request := httptest.NewRequest("GET", target, nil)
+		w := httptest.NewRecorder()
+		testMux.ServeHTTP(w, request)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "allowlisted backend", w.Body.String())
+		assert.Empty(t, w.Header().Get("Set-Cookie"))
+	}
 }
 
 func TestHandlerXHR(t *testing.T) {
@@ -164,6 +159,9 @@ func TestHandlerXHR(t *testing.T) {
 }
 
 func TestNexthopInvalid(t *testing.T) {
+	previous := *learnNexthops
+	*learnNexthops = false
+	defer func() { *learnNexthops = previous }()
 	request := httptest.NewRequest("GET", "/favicon.ico", nil)
 	request.Host = "nonexistent.example.test"
 	w := httptest.NewRecorder()

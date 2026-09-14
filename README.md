@@ -20,19 +20,21 @@ Control access to services beyond your perimeter network. Deploy with split-DNS 
 
 ## Install
 ```
-$ docker pull presbrey/beyond
+$ docker pull ghcr.io/presbrey/beyond:v1.9.0
 ```
 or:
 ```
-$ go get -u -x github.com/presbrey/beyond
+$ go install github.com/presbrey/beyond/cmd/httpd@v1.9.0
 ```
+Source builds require Go 1.26 or newer.
+
 ## Usage
 
 ### Example Configurations
 
 #### Basic OIDC Setup
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -beyond-host beyond.example.com \
   -cookie-domain .example.com \
   -oidc-issuer https://your-idp.com/oidc \
@@ -42,7 +44,7 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
 
 #### OIDC with Access Control
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -beyond-host beyond.example.com \
   -cookie-domain .example.com \
   -oidc-issuer https://accounts.google.com \
@@ -57,7 +59,7 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
 ```bash
 docker run --rm -p 80:80 \
   -v /path/to/certs:/certs \
-  presbrey/beyond httpd \
+  ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -beyond-host beyond.example.com \
   -cookie-domain .example.com \
   -saml-metadata-url https://your-idp.com/metadata \
@@ -68,7 +70,7 @@ docker run --rm -p 80:80 \
 
 #### GitHub Enterprise with Token Auth
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -beyond-host beyond.example.com \
   -cookie-domain .example.com \
   -oidc-issuer https://github.example.com \
@@ -80,7 +82,7 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
 
 #### Production with Elasticsearch Logging
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -beyond-host beyond.example.com \
   -cookie-domain .example.com \
   -oidc-issuer https://login.example.com \
@@ -97,14 +99,14 @@ docker run --rm -p 80:80 presbrey/beyond httpd \
 
 ### Cookie Key Management
 
-Beyond requires a single cryptographic key for session cookie encryption. You have two options:
+Beyond supports either a single hex key or the legacy authentication/encryption key pair. Existing deployments can keep `-cookie-key1` and `-cookie-key2` with their existing values to preserve sessions. Do not combine the legacy options with `-cookie-key`.
+
+For new deployments, choose one of these options:
 
 #### Option 1: Auto-Generated Key (Development/Testing)
-If no cookie key is provided, Beyond will automatically generate a secure random key at startup and log it:
+If no cookie key is provided, Beyond will automatically generate a secure random key at startup and log a warning:
 ```
-WARN[0000] No cookie key provided, generated random key for this session:
-WARN[0000]   -cookie-key a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
-WARN[0000] IMPORTANT: Sessions will not persist across restarts. Set explicit key for production use.
+WARN[0000] Generated a temporary cookie key; configure a persistent key to retain sessions across restarts
 ```
 
 #### Option 2: Explicit Key (Production)
@@ -113,7 +115,7 @@ For production deployments, always set an explicit key to maintain session persi
 # Generate key once and reuse it
 export COOKIE_KEY=$(openssl rand -hex 32)
 
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -cookie-key "$COOKIE_KEY" \
   # ... other parameters
 ```
@@ -128,7 +130,7 @@ You can configure host rewriting in two ways:
 **Option 1: Command Line**
 Replacement values can include protocols and ports for advanced routing:
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -hosts-csv "old-api.example.com=https://new-api.example.com:8443,legacy.corp=http://modern.corp.example.com:8080" \
   # ... other parameters
 ```
@@ -146,7 +148,7 @@ Create a JSON file with hostname mappings. Replacement values can include protoc
 
 Then reference it:
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -hosts-url https://config.example.com/hosts.json \
   # ... other parameters
 ```
@@ -160,138 +162,150 @@ When replacement values include full URLs (with `http://` or `https://`), Beyond
 - **Port specification**: `"internal.app": "http://internal.app:8080"` - connects to specific port
 - **Full URL**: `"old.secure": "https://new.secure:9443"` - specifies both protocol and port
 
+Mappings match complete DNS labels, with the most specific hostname taking precedence. `example.com` matches `service.example.com` but does not match `evilexample.com`.
+
 Subdomain matching is preserved: if `api.legacy.com` maps to `https://api.modern.com:8443`, then `service.api.legacy.com` becomes `service.api.modern.com` with HTTPS on port 8443.
 
 #### Host Allowlist (hosts-only mode)
 Use the `-hosts-only` flag to restrict access to only hosts defined in your host mappings:
 
 ```bash
-docker run --rm -p 80:80 presbrey/beyond httpd \
+docker run --rm -p 80:80 ghcr.io/presbrey/beyond:v1.9.0 httpd \
   -hosts-url https://config.example.com/hosts.json \
   -hosts-only \
   # ... other parameters
 ```
 
 When `hosts-only` is enabled:
-- Only hosts in the mapping (from `-hosts-csv` or `-hosts-url`) are allowed
+- Only hosts in the mapping (from `-hosts-csv` or `-hosts-url`) are allowed for proxied requests, including requests that match an authentication allowlist
 - Requests to unmapped hosts return 403 "Host not allowed"
 - Subdomain matching works (e.g., `api.example.com` matches `example.com`)
 
-Both command-line and URL mappings can be used together - they are merged at startup.
+Both command-line and URL mappings can be used together - they are merged at startup. The legacy `-host-masq` option is an alias for `-hosts-csv`. If both names are supplied, the last value wins.
 
 ### Command Line Options
 ```
-$ docker run --rm -p 80:80 presbrey/beyond httpd --help
+$ docker run --rm ghcr.io/presbrey/beyond:v1.9.0 httpd --help
   -401-code int
-    	status to respond when a user needs authentication (default 418)
+        status to respond when a user needs authentication (default 418)
   -404-message string
-    	message to use when backend apps do not respond (default "Please contact the application administrators to setup access.")
+        message to use when backend apps do not respond (default "Please contact the application administrators to setup access.")
   -allowlist-url string
-    	URL to site allowlist (eg. https://github.com/myorg/beyond-config/main/raw/allowlist.json)
+        URL to site allowlist (eg. https://github.com/myorg/beyond-config/main/raw/allowlist.json)
   -beyond-host string
-    	hostname of self (default "beyond.myorg.net")
+        hostname of self (default "beyond.myorg.net")
   -cookie-age int
-    	MaxAge setting in seconds (default 21600)
+        MaxAge setting in seconds (default 21600)
   -cookie-domain string
-    	session cookie domain (default ".myorg.net")
+        session cookie domain (default ".myorg.net")
   -cookie-key string
-    	64-char hex key for cookie encryption (example: "t8yG1gmeEyeb7pQpw544UeCTyDfPkE6uQ599vrruZRhLFC144thCRZpyHM7qGDjt")
+        64-char hex key for cookie authentication and encryption
+  -cookie-key1 string
+        legacy cookie authentication key; use with -cookie-key2
+  -cookie-key2 string
+        legacy cookie encryption key; use with -cookie-key1
   -cookie-name string
-    	session cookie name (default "beyond")
+        session cookie name (default "beyond")
   -debug
-    	set debug loglevel (default true)
+        set debug loglevel (default true)
   -docker-auth-scheme string
-    	(only for testing) (default "https")
+        (only for testing) (default "https")
   -docker-url string
-    	when there is only one (legacy option) (default "https://docker.myorg.net")
+        when there is only one (legacy option) (default "https://docker.myorg.net")
   -docker-urls string
-    	csv of docker server base URLs (default "https://harbor.myorg.net,https://ghcr.myorg.net")
+        csv of docker server base URLs (default "https://harbor.myorg.net,https://ghcr.myorg.net")
   -error-color string
-    	css h1 color for errors (default "#69b342")
+        css h1 color for errors (default "#69b342")
   -error-email string
-    	address for help (eg. support@mycompany.com)
+        address for help (eg. support@mycompany.com)
   -error-plain
-    	disable html on error pages
+        disable html on error pages
   -federate-access string
-    	shared secret, 64 chars, enables federation
+        shared secret, 64 chars, enables federation
   -federate-secret string
-    	internal secret, 64 chars
+        internal secret, 64 chars
   -fence-url string
-    	URL to user fencing config (eg. https://github.com/myorg/beyond-config/main/raw/fence.json)
+        URL to user fencing config (eg. https://github.com/myorg/beyond-config/main/raw/fence.json)
   -ghp-hosts string
-    	CSV of github packages domains (default "ghp.myorg.net")
+        CSV of github packages domains (default "ghp.myorg.net")
   -header-prefix string
-    	prefix extra headers with this string (default "Beyond")
+        prefix extra headers with this string (default "Beyond")
   -health-path string
-    	URL of the health endpoint (default "/healthz/ping")
+        URL of the health endpoint (default "/healthz/ping")
   -health-reply string
-    	response body of the health endpoint (default "ok")
+        response body of the health endpoint (default "ok")
   -home-url string
-    	redirect users here from root (default "https://google.com")
+        redirect users here from root (default "https://google.com")
   -host-masq string
-    	rewrite nexthop hosts (format: from1=to1,from2=to2)
+        legacy alias for -hosts-csv
+  -hosts-csv string
+        rewrite nexthop hosts (format: from1=to1,from2=to2)
+  -hosts-only
+        only allow requests to hosts in the host mapping
+  -hosts-url string
+        URL to host mapping config (eg. https://github.com/myorg/beyond-config/main/raw/hosts.json)
   -http string
-    	listen address (default ":80")
+        listen address (default ":80")
   -insecure-skip-verify
-    	allow TLS backends without valid certificates
+        allow TLS backends without valid certificates
   -learn-dial-timeout duration
-    	skip port after this connection timeout (default 8s)
+        skip port after this connection timeout (default 8s)
   -learn-http-ports string
-    	after HTTPS, try these HTTP ports (csv) (default "80,8080,6000,6060,7000,7070,8000,9000,9200,15672")
+        after HTTPS, try these HTTP ports (csv) (default "80,8080,6000,6060,7000,7070,8000,9000,9200,15672")
   -learn-https-ports string
-    	try learning these backend HTTPS ports (csv) (default "443,4443,6443,8443,9443,9090")
+        try learning these backend HTTPS ports (csv) (default "443,4443,6443,8443,9443,9090")
   -learn-nexthops
-    	set false to require explicit allowlisting (default true)
+        set false to require explicit allowlisting (default true)
   -log-elastic string
-    	csv of elasticsearch servers
+        csv of elasticsearch servers
   -log-elastic-interval duration
-    	how often to commit bulk updates (default 1s)
+        how often to commit bulk updates (default 1s)
   -log-elastic-prefix string
-    	insert this on the front of elastic indexes (default "beyond")
+        insert this on the front of elastic indexes (default "beyond")
   -log-elastic-workers int
-    	bulk commit workers (default 3)
+        bulk commit workers (default 3)
   -log-http
-    	enable HTTP logging to stdout
+        enable HTTP logging to stdout
   -log-json
-    	use json output (logrus)
+        use json output (logrus)
   -log-xff
-    	include X-Forwarded-For in logs (default true)
+        include X-Forwarded-For in logs (default true)
   -oidc-client-id string
-    	OIDC client ID (default "f8b8b020-4ec2-0135-6452-027de1ec0c4e43491")
+        OIDC client ID (default "f8b8b020-4ec2-0135-6452-027de1ec0c4e43491")
   -oidc-client-secret string
-    	OIDC client secret (default "cxLF74XOeRRFDJbKuJpZAOtL4pVPK1t2XGVrDbe5R")
+        OIDC client secret (default "cxLF74XOeRRFDJbKuJpZAOtL4pVPK1t2XGVrDbe5R")
   -oidc-issuer string
-    	OIDC issuer URL provided by IdP (default "https://accounts.google.com")
+        OIDC issuer URL provided by IdP (default "https://accounts.google.com")
   -saml-cert-file string
-    	SAML SP path to cert.pem (default "example/myservice.cert")
+        SAML SP path to cert.pem (default "example/myservice.cert")
   -saml-entity-id string
-    	SAML SP entity ID (blank defaults to beyond-host)
+        SAML SP entity ID (blank defaults to beyond-host)
   -saml-key-file string
-    	SAML SP path to key.pem (default "example/myservice.key")
+        SAML SP path to key.pem (default "example/myservice.key")
   -saml-metadata-url string
-    	SAML metadata URL from IdP (blank disables SAML)
+        SAML metadata URL from IdP (blank disables SAML)
   -saml-nameid-format string
-    	SAML SP option: {email, persistent, transient, unspecified} (default "email")
+        SAML SP option: {email, persistent, transient, unspecified} (default "email")
   -saml-session-key string
-    	SAML attribute to map from session (default "email")
+        SAML attribute to map from session (default "email")
   -saml-sign-requests
-    	SAML SP signs authentication requests
+        SAML SP signs authentication requests
   -saml-signature-method string
-    	SAML SP option: {sha1, sha256, sha512}
+        SAML SP option: {sha1, sha256, sha512}
   -server-idle-timeout duration
-    	max time to wait for the next request when keep-alives are enabled (default 3m0s)
+        max time to wait for the next request when keep-alives are enabled (default 3m0s)
   -server-read-timeout duration
-    	max duration for reading the entire request, including the body (default 1m0s)
+        max duration for reading the entire request, including the body (default 1m0s)
   -server-write-timeout duration
-    	max duration before timing out writes of the response (default 2m0s)
+        max duration before timing out writes of the response (default 2m0s)
   -sites-url string
-    	URL to allowed sites config (eg. https://github.com/myorg/beyond-config/main/raw/sites.json)
+        URL to allowed sites config (eg. https://github.com/myorg/beyond-config/main/raw/sites.json)
   -token-base string
-    	token server URL prefix (eg. https://api.github.com/user)
+        token server URL prefix (eg. https://api.github.com/user)
   -token-graphql string
-    	GraphQL URL for auth (eg. https://api.github.com/graphql)
+        GraphQL URL for auth (eg. https://api.github.com/graphql)
   -token-graphql-query string
-    	 (default "{\"query\": \"query { viewer { login }}\"}")
+         (default "{\"query\": \"query { viewer { login }}\"}")
   -websocket-compression
-    	allow websocket transport compression (gorilla/experimental)
+        allow websocket transport compression (gorilla/experimental)
 ```

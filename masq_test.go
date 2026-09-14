@@ -146,7 +146,7 @@ func TestHostRewriteDetailed(t *testing.T) {
 	assert.Equal(t, "service.api.modern.com", result.Host)
 	assert.Equal(t, "https", result.Scheme)
 	assert.Equal(t, "8443", result.Port)
-	assert.Equal(t, "https://api.modern.com:8443", result.FullURL)
+	assert.Equal(t, "https://service.api.modern.com:8443", result.FullURL)
 
 	// Test with no matching host
 	result = authz.HostRewriteDetailed("unmatched.example.com")

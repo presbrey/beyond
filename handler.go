@@ -1,6 +1,7 @@
 package beyond
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,7 +17,12 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		session = authn.NewSession(*authn.CookieName)
 	}
-	if authn.SAMLMiddleware() != nil && authn.SAMLFilter(w, r, nil, *authn.CookieName) {
+	samlAuthenticated, err := authn.SAMLFilter(w, r, nil, *authn.CookieName)
+	if err != nil {
+		errorHandler(w, http.StatusInternalServerError, "Unable to save login session")
+		return
+	}
+	if samlAuthenticated {
 		next, _ := session.Values["next"].(string)
 		jsRedirect(w, next)
 		return
@@ -25,7 +31,10 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 	session.Values["next"] = r.URL.Query().Get("next")
 	state, _ := authn.RandHex32()
 	session.Values["state"] = state
-	session.Save(w)
+	if err := session.Save(w); err != nil {
+		errorHandler(w, http.StatusInternalServerError, "Unable to save login session")
+		return
+	}
 
 	if *authn.SAMLIDP == "" {
 		next := authn.OIDCAuthCodeURL(state, oauth2.AccessTypeOffline)
@@ -48,7 +57,7 @@ func handleOIDC(w http.ResponseWriter, r *http.Request) {
 		errorHandler(w, 400, err.Error())
 		return
 	}
-	if state, ok := session.Values["state"].(string); !ok || state != r.URL.Query().Get("state") {
+	if state, ok := session.Values["state"].(string); !ok || state == "" || state != r.URL.Query().Get("state") {
 		errorHandler(w, 403, "Invalid Browser State")
 		return
 	}
@@ -61,7 +70,10 @@ func handleOIDC(w http.ResponseWriter, r *http.Request) {
 	next, _ := session.Values["next"].(string)
 	session.Values["next"] = ""
 	session.Values["state"] = ""
-	session.Save(w)
+	if err := session.Save(w); err != nil {
+		errorHandler(w, http.StatusInternalServerError, "Unable to save login session")
+		return
+	}
 
 	http.Redirect(w, r, next, http.StatusFound)
 }
@@ -82,15 +94,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set(*headerPrefix+"-User", user)
 	}
 
-	// apply allowlist
-	if authz.Allowlisted(r) {
-		nexthop(w, r)
-		return
-	}
-
 	// check host-only restriction
 	if !authz.HostAllowed(r.Host) {
 		errorHandler(w, 403, "Host not allowed")
+		return
+	}
+
+	// apply allowlist within the configured host restriction
+	if authz.Allowlisted(r) {
+		nexthop(w, r)
 		return
 	}
 
@@ -133,11 +145,16 @@ func jsRedirect(w http.ResponseWriter, next string) {
 
 	// hack to guarantee interactive session
 	w.Header().Set("Content-Type", "text/html")
+	parsed, err := url.Parse(next)
+	if err != nil || (parsed.Scheme != "" && parsed.Scheme != "http" && parsed.Scheme != "https") {
+		next = "/"
+	}
+	encoded, _ := json.Marshal(next)
 	fmt.Fprintf(w, `
 <script type="text/javascript">
-window.location.replace("%s");
+window.location.replace(%s);
 </script>
-`, next)
+`, encoded)
 }
 
 func setCacheControl(w http.ResponseWriter) {

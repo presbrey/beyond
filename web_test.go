@@ -35,7 +35,9 @@ var (
 )
 
 func init() {
-	Setup()
+	if err := Setup(); err != nil {
+		panic(err)
+	}
 	testMux = NewMux()
 }
 

@@ -8,12 +8,15 @@ import (
 	"net/http"
 
 	"github.com/dghubble/sessions"
+	"github.com/sirupsen/logrus"
 )
 
 var (
 	CookieAge  = flag.Int("cookie-age", 3600*6, "MaxAge setting in seconds")
 	CookieDom  = flag.String("cookie-domain", ".myorg.net", "session cookie domain")
-	CookieKey  = flag.String("cookie-key", "", `64-char hex key for cookie encryption (example: "t8yG1gmeEyeb7pQpw544UeCTyDfPkE6uQ599vrruZRhLFC144thCRZpyHM7qGDjt")`)
+	CookieKey  = flag.String("cookie-key", "", "64-char hex key for cookie authentication and encryption")
+	CookieKey1 = flag.String("cookie-key1", "", "legacy cookie authentication key; use with -cookie-key2")
+	CookieKey2 = flag.String("cookie-key2", "", "legacy cookie encryption key; use with -cookie-key1")
 	CookieName = flag.String("cookie-name", "beyond", "session cookie name")
 
 	store *sessions.CookieStore
@@ -54,7 +57,8 @@ func (s *Session) Save(w http.ResponseWriter) error {
 	if s == nil || s.sess == nil {
 		return fmt.Errorf("session not initialized")
 	}
-	return GetStore().Save(w, s.sess)
+	s.sess.Values = s.Values
+	return s.sess.Save(w)
 }
 
 // generateRandomKey creates a 32-byte random key encoded as hex string
@@ -69,26 +73,43 @@ func generateRandomKey() (string, error) {
 
 // SetupSession initializes the session store
 func SetupSession() error {
-	if len(*CookieKey) == 0 {
-		// Generate random cookie key for single instance deployments
-		key, err := generateRandomKey()
-		if err != nil {
-			return fmt.Errorf("failed to generate cookie key: %v", err)
+	var authKey, encryptionKey []byte
+	if *CookieKey1 != "" || *CookieKey2 != "" {
+		if *CookieKey != "" {
+			return fmt.Errorf("use either -cookie-key or the legacy -cookie-key1/-cookie-key2 options, not both")
 		}
-		*CookieKey = key
-	}
+		if *CookieKey1 == "" {
+			return fmt.Errorf("-cookie-key1 is required with -cookie-key2")
+		}
+		if n := len(*CookieKey2); n != 16 && n != 24 && n != 32 {
+			return fmt.Errorf("-cookie-key2 must contain 16, 24, or 32 bytes")
+		}
+		authKey = []byte(*CookieKey1)
+		encryptionKey = []byte(*CookieKey2)
+	} else {
+		if len(*CookieKey) == 0 {
+			// Generate random cookie key for single instance deployments
+			key, err := generateRandomKey()
+			if err != nil {
+				return fmt.Errorf("failed to generate cookie key: %v", err)
+			}
+			*CookieKey = key
+			logrus.Warn("Generated a temporary cookie key; configure a persistent key to retain sessions across restarts")
+		}
 
-	// Validate key length (should be 64 hex chars = 32 bytes)
-	if len(*CookieKey) != 64 {
-		return fmt.Errorf("cookie key must be exactly 64 hex characters (32 bytes), got %d", len(*CookieKey))
-	}
+		// Validate key length (should be 64 hex chars = 32 bytes)
+		if len(*CookieKey) != 64 {
+			return fmt.Errorf("cookie key must be exactly 64 hex characters (32 bytes), got %d", len(*CookieKey))
+		}
 
-	// setup encrypted cookies - use the key for both authentication and encryption
-	keyBytes, err := hex.DecodeString(*CookieKey)
-	if err != nil {
-		return fmt.Errorf("cookie key must be valid hex: %v", err)
+		// setup encrypted cookies - use the key for both authentication and encryption
+		keyBytes, err := hex.DecodeString(*CookieKey)
+		if err != nil {
+			return fmt.Errorf("cookie key must be valid hex: %v", err)
+		}
+		authKey, encryptionKey = keyBytes, keyBytes
 	}
-	store = sessions.NewCookieStore(keyBytes, keyBytes)
+	store = sessions.NewCookieStore(authKey, encryptionKey)
 	store.Config.Domain = *CookieDom
 	store.Config.MaxAge = *CookieAge
 	store.Config.HTTPOnly = true

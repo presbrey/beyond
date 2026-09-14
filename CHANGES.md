@@ -1,5 +1,14 @@
 # Project Changes
 
+## v1.9.0 — 2026-09-14
+
+Host management and authentication refactoring, with SAML session persistence,
+DNS-boundary host restrictions, backend-port cache isolation, and subdomain
+routing fixes. Legacy cookie-key flags and `-host-masq` remain supported.
+Includes the v1.8.11 maintenance updates, Go 1.26 builds, local integration
+fixtures, and regression tests. See [release notes](RELEASE_NOTES.md) for
+upgrade guidance and validation details.
+
 ## 2024-11-10: Docker Package Refactoring
 
 ### Created `/internal/docker/` Package
