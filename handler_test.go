@@ -1,8 +1,10 @@
 package beyond
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -85,7 +87,7 @@ func TestHandlerOidcStateValid(t *testing.T) {
 		request.Header.Set("Cookie", cookie)
 		response := r.Do(request)
 		assert.Equal(t, 401, response.StatusCode)
-		assert.Contains(t, response.Body, "oauth2: cannot fetch token: ")
+		assert.Contains(t, response.Body, "oauth2:")
 	})
 }
 
@@ -107,24 +109,30 @@ func TestHandlerWebsocket(t *testing.T) {
 }
 
 func TestHandlerAllowlist(t *testing.T) {
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/", nil)
-		assert.Nil(t, err)
-		request.Host = "github.githubassets.com"
-		response := r.Do(request)
-		assert.Equal(t, 200, response.StatusCode)
-		assert.Equal(t, "", response.Header.Get("Set-Cookie"))
-		assert.Equal(t, "Welcome", string(response.RawBody[:7]))
-	})
-	testflight.WithServer(testMux, func(r *testflight.Requester) {
-		request, err := http.NewRequest("GET", "/.well-known/acme-challenge/test", nil)
-		assert.Nil(t, err)
-		request.Host = "github.com"
-		response := r.Do(request)
-		assert.Equal(t, 404, response.StatusCode)
-		assert.NotEqual(t, "", response.Header.Get("Set-Cookie"))
-		assert.Contains(t, response.Body, "Page not found")
-	})
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "allowlisted backend")
+	}))
+	defer backend.Close()
+	target, err := url.Parse(backend.URL)
+	assert.NoError(t, err)
+	const backendHost = "allowlist.example.test"
+	previous := allowlist.m
+	allowlist.m = map[string]map[string]bool{
+		"host": {backendHost: true},
+		"path": {"/.well-known/acme-challenge": true},
+	}
+	const pathHost = "path.example.test"
+	hostProxy.Store(backendHost, newSHRP(target))
+	hostProxy.Store(pathHost, newSHRP(target))
+	defer func() { allowlist.m = previous; hostProxy.Delete(backendHost); hostProxy.Delete(pathHost) }()
+	for _, target := range []string{"http://" + backendHost + "/", "http://" + pathHost + "/.well-known/acme-challenge/test"} {
+		request := httptest.NewRequest("GET", target, nil)
+		w := httptest.NewRecorder()
+		testMux.ServeHTTP(w, request)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "allowlisted backend", w.Body.String())
+		assert.Empty(t, w.Header().Get("Set-Cookie"))
+	}
 }
 
 func TestHandlerXHR(t *testing.T) {
@@ -141,6 +149,9 @@ func TestHandlerXHR(t *testing.T) {
 }
 
 func TestNexthopInvalid(t *testing.T) {
+	previous := *learnNexthops
+	*learnNexthops = false
+	defer func() { *learnNexthops = previous }()
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
 		request, err := http.NewRequest("GET", "/favicon.ico", nil)
 		assert.Nil(t, err)

@@ -30,7 +30,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+
+      - name: Verify release before publishing
+        run: |
+          go vet ./...
+          go test -count=1 -race -timeout=90s ./...
 
       # Login against a Docker registry except on PR
       # https://github.com/docker/login-action

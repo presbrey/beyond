@@ -1,7 +1,7 @@
-FROM golang:1.18.1
+FROM docker.io/library/golang:1.26
 
-ADD . /go/src/github.com/cogolabs/beyond
-WORKDIR /go/src/github.com/cogolabs/beyond
+WORKDIR /src
+COPY . .
 RUN go install ./cmd/httpd
 
 WORKDIR /go

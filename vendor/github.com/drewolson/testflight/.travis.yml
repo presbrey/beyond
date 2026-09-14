@@ -1,7 +1,0 @@
-language: go
-go:
-  - "1.10"
-install:
-  - go get -u golang.org/x/vgo
-script:
-  - $GOPATH/bin/vgo test -v ./...

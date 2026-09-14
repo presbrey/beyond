@@ -87,8 +87,8 @@ func (o *oidcMock) Verify(ctx context.Context, raw string) (*oidc.IDToken, error
 }
 
 func init() {
-	// *oidcIssuer = oidcServer.URL
-	oidcWK.Issuer = oidcServer.URL + oidcWK.Issuer
+	*oidcIssuer = oidcServer.URL
+	oidcWK.Issuer = oidcServer.URL
 	oidcWK.TokenEndpoint = oidcServer.URL + oidcWK.TokenEndpoint
 	oidcWK.AuthorizationEndpoint = oidcServer.URL + oidcWK.AuthorizationEndpoint
 }

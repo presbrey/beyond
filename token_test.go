@@ -2,9 +2,11 @@ package beyond
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -23,7 +25,7 @@ var (
 	}
 
 	tokenServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("access_token") == "invalid" {
+		if r.Header.Get("Authorization") == "Bearer invalid" {
 			_, err := io.WriteString(w, "{")
 			if err != nil {
 				errorHandler(w, 500, err.Error())
@@ -43,7 +45,7 @@ var (
 )
 
 func TestTokenError(t *testing.T) {
-	*tokenBase = "https://foo.bar?"
+	*tokenBase = ":"
 
 	r, err := http.NewRequest("GET", "/", nil)
 	assert.NoError(t, err)
@@ -87,23 +89,32 @@ func TestTokenFederation(t *testing.T) {
 }
 
 func TestTokenSuccess(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "authenticated backend")
+	}))
+	defer backend.Close()
+	target, err := url.Parse(backend.URL)
+	assert.NoError(t, err)
+	const backendHost = "token.example.test"
+	hostProxy.Store(backendHost, newSHRP(target))
+	defer hostProxy.Delete(backendHost)
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
 		request, err := http.NewRequest("GET", "/ip", nil)
 		assert.Nil(t, err)
 		request.Header.Set("Authorization", "Token "+tokenTestUserTokens["user1"])
-		request.Host = "httpbin.org"
+		request.Host = backendHost
 		response := r.Do(request)
 		assert.Equal(t, 200, response.StatusCode)
-		assert.Equal(t, "{\n  \"origin\"", strings.Split(response.Body, ":")[0])
+		assert.Equal(t, "authenticated backend", response.Body)
 	})
 	testflight.WithServer(testMux, func(r *testflight.Requester) {
 		request, err := http.NewRequest("GET", "/ip", nil)
 		assert.Nil(t, err)
 		request.SetBasicAuth("user1", tokenTestUserTokens["user1"])
-		request.Host = "httpbin.org"
+		request.Host = backendHost
 		response := r.Do(request)
 		assert.Equal(t, 200, response.StatusCode)
-		assert.Equal(t, "{\n  \"origin\"", strings.Split(response.Body, ":")[0])
+		assert.Equal(t, "authenticated backend", response.Body)
 	})
 
 	// expect ACL 403
@@ -111,7 +122,7 @@ func TestTokenSuccess(t *testing.T) {
 		request, err := http.NewRequest("GET", "/ip", nil)
 		assert.Nil(t, err)
 		request.Header.Set("Authorization", "Token "+tokenTestUserTokens["vendor@gmail.com"])
-		request.Host = "httpbin.org"
+		request.Host = backendHost
 		response := r.Do(request)
 		assert.Equal(t, 403, response.StatusCode)
 		assert.Contains(t, response.Body, "Access Denied")

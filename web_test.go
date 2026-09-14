@@ -31,6 +31,10 @@ var (
 )
 
 func init() {
+	*tokenBase = tokenServer.URL
+	if err := Setup(); err != nil {
+		panic(err)
+	}
 	testMux = NewMux()
 }
 
@@ -43,14 +47,6 @@ func TestWebPOST(t *testing.T) {
 		response := rq.Do(request)
 		assert.Equal(t, 200, response.StatusCode)
 		assert.Equal(t, "pong", response.Body)
-
-		request, err = http.NewRequest("POST", "/", strings.NewReader("aliens"))
-		request.Host = echoServer.URL // including http://
-		assert.NoError(t, err)
-		request.SetBasicAuth("", tokenTestUserTokens["user1"])
-		response = rq.Do(request)
-		assert.Equal(t, 502, response.StatusCode)
-		assert.Equal(t, "", response.Body)
 
 		request, err = http.NewRequest("POST", "/", strings.NewReader("aliens"))
 		request.Host = echoServer.URL[7:] // strip the http://

@@ -29,6 +29,15 @@ type oidcConfigI interface {
 	Exchange(context.Context, string) (*oauth2.Token, error)
 }
 
+// oauth2ConfigWrapper adapts the variadic Exchange API to the existing interface.
+type oauth2ConfigWrapper struct {
+	*oauth2.Config
+}
+
+func (w *oauth2ConfigWrapper) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
+	return w.Config.Exchange(ctx, code)
+}
+
 type oidcVerifierI interface {
 	Verify(context.Context, string) (*oidc.IDToken, error)
 }
@@ -56,7 +65,7 @@ func oidcSetup(issuer string) error {
 	oidcVerifier = provider.Verifier(&oidc.Config{
 		ClientID: oauth2Config.ClientID,
 	})
-	oidcConfig = oauth2Config
+	oidcConfig = &oauth2ConfigWrapper{oauth2Config}
 	return nil
 }
 
