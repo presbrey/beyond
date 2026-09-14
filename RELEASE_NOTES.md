@@ -1,10 +1,9 @@
-# Security and dependency maintenance candidate
+# v1.8.11 — Security and dependency maintenance
 
-Proposed version: v1.8.11, based on v1.8.10.
+Based on v1.8.10.
 
-This candidate updates dependencies without including the authentication package
-refactor, single-cookie-key migration, host management features, or logging changes
-from main.
+This maintenance release updates dependencies while retaining the v1.8.10
+configuration and cookie format.
 
 ## Included
 
@@ -23,7 +22,7 @@ from main.
 The v1.8.10 module path (`github.com/cogolabs/beyond`), exported application API,
 `-cookie-key1`, `-cookie-key2`, and `-host-masq` are retained. Cookie serialization
 and the session library version are unchanged. Keep the existing keys and cookie
-settings when upgrading; this candidate does not introduce a cookie migration.
+settings when upgrading; this release does not introduce a cookie migration.
 
 Source builds now require Go 1.26 or newer. Authentication dependencies enforce
 their updated validation rules, so deployments should verify their identity
@@ -35,10 +34,8 @@ provider integration before rollout.
 - Uncached race tests also pass inside the container on Go 1.26.8.
 - Container build and a smoke check accepting the legacy CLI flags pass.
 - govulncheck on both Go 1.27.1 and container Go 1.26.8 reports no reachable
-  vulnerabilities and no vulnerabilities in
-  imported packages. It reports GO-2026-5932 in the unused OpenPGP package of
+  vulnerabilities and no vulnerabilities in imported packages. It reports GO-2026-5932 in the unused OpenPGP package of
   golang.org/x/crypto; Beyond does not import that package.
 - The inherited external WebSocket echo tests remain skipped. No live SAML
   identity-provider test is included in the existing suite.
 
-This is a local release candidate; no release tag or image has been published.
