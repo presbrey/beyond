@@ -34,8 +34,8 @@ provider integration before rollout.
 - Uncached race tests also pass inside the container on Go 1.26.8.
 - Container build and a smoke check accepting the legacy CLI flags pass.
 - govulncheck on both Go 1.27.1 and container Go 1.26.8 reports no reachable
-  vulnerabilities and no vulnerabilities in imported packages. It reports GO-2026-5932 in the unused OpenPGP package of
-  golang.org/x/crypto; Beyond does not import that package.
+  vulnerabilities and no vulnerabilities in imported packages. It reports
+  GO-2026-5932 in the unused OpenPGP package of golang.org/x/crypto; Beyond does
+  not import that package.
 - The inherited external WebSocket echo tests remain skipped. No live SAML
   identity-provider test is included in the existing suite.
-
